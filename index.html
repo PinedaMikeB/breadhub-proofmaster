@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BreadHub ProofMaster</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase CDN (Compat for file:// protocol) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🍞</span>
+                    <div class="logo-text">
+                        <span class="logo-brand">BreadHub</span>
+                        <span class="logo-sub">ProofMaster</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="nav-section">
+                <span class="nav-label">Production</span>
+                <ul class="nav-menu">
+                    <li><a href="#" data-view="dashboard" class="nav-link active">
+                        <span class="nav-icon">📊</span> Dashboard
+                    </a></li>
+                    <li><a href="#" data-view="production" class="nav-link">
+                        <span class="nav-icon">🏭</span> New Production
+                    </a></li>
+                    <li><a href="#" data-view="timers" class="nav-link">
+                        <span class="nav-icon">⏱️</span> Active Timers
+                    </a></li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <span class="nav-label">Recipes</span>
+                <ul class="nav-menu">
+                    <li><a href="#" data-view="ingredients" class="nav-link">
+                        <span class="nav-icon">🧂</span> Ingredients
+                    </a></li>
+                    <li><a href="#" data-view="doughs" class="nav-link">
+                        <span class="nav-icon">🥖</span> Dough Recipes
+                    </a></li>
+                    <li><a href="#" data-view="toppings" class="nav-link">
+                        <span class="nav-icon">🧈</span> Toppings
+                    </a></li>
+                    <li><a href="#" data-view="fillings" class="nav-link">
+                        <span class="nav-icon">🥥</span> Fillings
+                    </a></li>
+                    <li><a href="#" data-view="products" class="nav-link">
+                        <span class="nav-icon">🥐</span> Products
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div class="nav-section">
+                <span class="nav-label">Reports</span>
+                <ul class="nav-menu">
+                    <li><a href="#" data-view="costs" class="nav-link">
+                        <span class="nav-icon">💰</span> Cost Analysis
+                    </a></li>
+                    <li><a href="#" data-view="history" class="nav-link">
+                        <span class="nav-icon">📜</span> Production History
+                    </a></li>
+                </ul>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot offline"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-left">
+                    <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                    <span class="page-subtitle" id="pageSubtitle">Production overview</span>
+                </div>
+                <div class="header-right">
+                    <div class="current-time" id="currentTime"></div>
+                    <button class="btn btn-primary" id="newProductionBtn">
+                        <span>+</span> New Production
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Views -->
+            <div class="content-area">
+                <!-- Dashboard View -->
+                <div id="dashboardView" class="view active">
+                    <div class="dashboard-grid">
+                        <!-- Active Production Card -->
+                        <div class="card card-highlight">
+                            <div class="card-header">
+                                <h3>🏭 Active Production</h3>
+                                <span class="badge badge-warning" id="activeProductionBadge">None</span>
+                            </div>
+                            <div class="card-body" id="activeProductionContent">
+                                <p class="empty-state">No active production run</p>
+                                <button class="btn btn-secondary" onclick="App.showView('production')">
+                                    Start Production
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Active Timers Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>⏱️ Active Timers</h3>
+                                <span class="badge" id="timerCount">0</span>
+                            </div>
+                            <div class="card-body" id="activeTimersContent">
+                                <p class="empty-state">No active timers</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Stats -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>📊 Today's Stats</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="statProduced">0</span>
+                                        <span class="stat-label">Pieces Produced</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="statBatches">0</span>
+                                        <span class="stat-label">Batches</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Alerts Card -->
+                        <div class="card card-full-width">
+                            <div class="card-header">
+                                <h3>🔔 Alerts</h3>
+                            </div>
+                            <div class="card-body" id="alertsContent">
+                                <p class="empty-state">No alerts</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Ingredients View -->
+                <div id="ingredientsView" class="view">
+                    <div class="view-header">
+                        <h2>Master Ingredients</h2>
+                        <button class="btn btn-primary" onclick="Ingredients.showAddModal()">
+                            + Add Ingredient
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="ingredientsTable">
+                            <thead>
+                                <tr>
+                                    <th>Ingredient</th>
+                                    <th>Category</th>
+                                    <th>Unit</th>
+                                    <th>Cost/Unit</th>
+                                    <th>Supplier</th>
+                                    <th>Updated</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ingredientsTableBody">
+                                <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Dough Recipes View -->
+                <div id="doughsView" class="view">
+                    <div class="view-header">
+                        <h2>Dough Recipes</h2>
+                        <button class="btn btn-primary" onclick="Doughs.showAddModal()">
+                            + New Dough Recipe
+                        </button>
+                    </div>
+                    <div class="cards-grid" id="doughsGrid">
+                        <p class="empty-state">Loading recipes...</p>
+                    </div>
+                </div>
+                
+                <!-- Toppings View -->
+                <div id="toppingsView" class="view">
+                    <div class="view-header">
+                        <h2>Topping Recipes</h2>
+                        <button class="btn btn-primary" onclick="Toppings.showAddModal()">
+                            + New Topping
+                        </button>
+                    </div>
+                    <div class="cards-grid" id="toppingsGrid">
+                        <p class="empty-state">Loading toppings...</p>
+                    </div>
+                </div>
+                
+                <!-- Fillings View -->
+                <div id="fillingsView" class="view">
+                    <div class="view-header">
+                        <h2>Filling Recipes</h2>
+                        <button class="btn btn-primary" onclick="Fillings.showAddModal()">
+                            + New Filling
+                        </button>
+                    </div>
+                    <div class="cards-grid" id="fillingsGrid">
+                        <p class="empty-state">Loading fillings...</p>
+                    </div>
+                </div>
+
+                <!-- Products View -->
+                <div id="productsView" class="view">
+                    <div class="view-header">
+                        <h2>Products</h2>
+                        <button class="btn btn-primary" onclick="Products.showAddModal()">
+                            + New Product
+                        </button>
+                    </div>
+                    <div class="cards-grid" id="productsGrid">
+                        <p class="empty-state">Loading products...</p>
+                    </div>
+                </div>
+                
+                <!-- Production View -->
+                <div id="productionView" class="view">
+                    <div class="production-wizard" id="productionWizard">
+                        <!-- Step 1: Planning -->
+                        <div class="wizard-step active" data-step="1">
+                            <div class="step-header">
+                                <span class="step-number">1</span>
+                                <h2>🍞 Production Planning</h2>
+                                <p>What are you making today?</p>
+                            </div>
+                            <div class="step-content">
+                                <div class="product-selector">
+                                    <select id="productSelect" class="form-select">
+                                        <option value="">Select a product...</option>
+                                    </select>
+                                    <input type="number" id="productPieces" 
+                                           placeholder="Pieces" min="1" class="form-input">
+                                    <button class="btn btn-secondary" onclick="Production.addProduct()">
+                                        + Add
+                                    </button>
+                                </div>
+                                
+                                <div class="planned-products" id="plannedProducts">
+                                    <p class="empty-state">No products added yet</p>
+                                </div>
+
+                                <div class="production-summary" id="productionSummary" style="display:none;">
+                                    <h3>📋 Production Summary</h3>
+                                    <div class="summary-content">
+                                        <div class="summary-item">
+                                            <span class="label">Total Dough Needed:</span>
+                                            <span class="value" id="totalDough">0g</span>
+                                        </div>
+                                        <div class="summary-item">
+                                            <span class="label">With 10% buffer:</span>
+                                            <span class="value" id="totalDoughBuffer">0g</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <h4>Ingredients Required:</h4>
+                                    <div id="ingredientsList" class="ingredients-list"></div>
+                                    
+                                    <div class="cost-preview">
+                                        <span class="label">Estimated Cost:</span>
+                                        <span class="value" id="estimatedCost">₱0.00</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="step-actions">
+                                    <button class="btn btn-primary" onclick="Production.startMixing()" 
+                                            id="startMixingBtn" disabled>
+                                        Start Mixing →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Mixing -->
+                        <div class="wizard-step" data-step="2">
+                            <div class="step-header">
+                                <span class="step-number">2</span>
+                                <h2>⏱️ Mixing</h2>
+                                <p>Mix the dough according to recipe</p>
+                            </div>
+                            <div class="step-content">
+                                <div class="timer-display">
+                                    <div class="timer-value" id="mixTimer">00:00</div>
+                                    <div class="timer-controls">
+                                        <button class="btn btn-success" onclick="Production.startMixTimer()">
+                                            ▶ Start
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="Production.pauseMixTimer()">
+                                            ⏸ Pause
+                                        </button>
+                                        <button class="btn btn-danger" onclick="Production.resetMixTimer()">
+                                            ↺ Reset
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="mixing-guidance" id="mixingGuidance">
+                                    <h4>Mixing Stages:</h4>
+                                    <div class="stage-list" id="mixingStages"></div>
+                                </div>
+                                
+                                <div class="qa-section">
+                                    <h4>Dough Quality Check:</h4>
+                                    <div class="qa-options">
+                                        <label class="qa-option">
+                                            <input type="radio" name="doughQuality" value="excellent">
+                                            <span>Excellent</span>
+                                        </label>
+                                        <label class="qa-option">
+                                            <input type="radio" name="doughQuality" value="good">
+                                            <span>Good</span>
+                                        </label>
+                                        <label class="qa-option">
+                                            <input type="radio" name="doughQuality" value="acceptable">
+                                            <span>Acceptable</span>
+                                        </label>
+                                        <label class="qa-option">
+                                            <input type="radio" name="doughQuality" value="poor">
+                                            <span>Poor</span>
+                                        </label>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Dough Temperature (°C):</label>
+                                        <input type="number" id="doughTemp" class="form-input" 
+                                               placeholder="e.g., 27">
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label>Notes:</label>
+                                        <textarea id="mixingNotes" class="form-textarea" 
+                                                  placeholder="Any observations..."></textarea>
+                                    </div>
+                                </div>
+                                
+                                <div class="step-actions">
+                                    <button class="btn btn-secondary" onclick="Production.goToStep(1)">
+                                        ← Back
+                                    </button>
+                                    <button class="btn btn-primary" onclick="Production.completeMixing()">
+                                        Pass QA - Start Division →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 3: Division Dashboard -->
+                        <div class="wizard-step" data-step="3">
+                            <div class="step-header critical">
+                                <span class="step-number">3</span>
+                                <h2>⚠️ Dough Division</h2>
+                                <p>Time-critical stage - divide quickly!</p>
+                            </div>
+                            <div class="step-content">
+                                <div class="dough-status">
+                                    <div class="status-item">
+                                        <span class="label">🕐 Dough Age:</span>
+                                        <span class="value timer-warning" id="doughAge">00:00</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="label">📊 Remaining:</span>
+                                        <span class="value" id="doughRemaining">0g</span>
+                                    </div>
+                                </div>
+
+                                <div class="division-queue" id="divisionQueue">
+                                    <h4>📋 Division Queue:</h4>
+                                    <div id="queueItems"></div>
+                                </div>
+                                
+                                <div class="in-progress-section" id="inProgressSection" style="display:none;">
+                                    <h4>🔪 Currently Dividing:</h4>
+                                    <div id="currentDivision"></div>
+                                </div>
+                                
+                                <div class="completed-section" id="completedSection" style="display:none;">
+                                    <h4>✅ Completed:</h4>
+                                    <div id="completedDivisions"></div>
+                                </div>
+                                
+                                <div class="step-actions">
+                                    <button class="btn btn-primary" onclick="Production.completeDivision()" 
+                                            id="completeDivisionBtn" style="display:none;">
+                                        All Divisions Complete →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Active Timers View -->
+                <div id="timersView" class="view">
+                    <div class="view-header">
+                        <h2>⏱️ Active Timers</h2>
+                    </div>
+                    <div class="timers-grid" id="timersGrid">
+                        <p class="empty-state">No active timers</p>
+                    </div>
+                </div>
+
+                <!-- Cost Analysis View -->
+                <div id="costsView" class="view">
+                    <div class="view-header">
+                        <h2>💰 Cost Analysis</h2>
+                    </div>
+                    <div class="cost-analysis" id="costAnalysis">
+                        <p class="empty-state">Select a product to view cost breakdown</p>
+                    </div>
+                </div>
+                
+                <!-- Production History View -->
+                <div id="historyView" class="view">
+                    <div class="view-header">
+                        <h2>📜 Production History</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Run ID</th>
+                                    <th>Products</th>
+                                    <th>Total Pieces</th>
+                                    <th>Quality</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Modal Title</h3>
+                <button class="modal-close" onclick="Modal.close()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn btn-secondary" onclick="Modal.close()">Cancel</button>
+                <button class="btn btn-primary" id="modalSaveBtn">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- Alert Modal for Critical Timers -->
+    <div class="alert-overlay" id="alertOverlay">
+        <div class="alert-modal" id="alertModal">
+            <div class="alert-icon">⚠️</div>
+            <h3 id="alertTitle">Alert</h3>
+            <p id="alertMessage">Message</p>
+            <button class="btn btn-primary" onclick="Alert.dismiss()">OK</button>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/firebase-init.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/modal.js"></script>
+    <script src="js/ingredients.js"></script>
+    <script src="js/doughs.js"></script>
+    <script src="js/toppings.js"></script>
+    <script src="js/fillings.js"></script>
+    <script src="js/products.js"></script>
+    <script src="js/production.js"></script>
+    <script src="js/timers.js"></script>
+    <script src="js/seed-data.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
