@@ -348,13 +348,46 @@ const PurchaseRequests = {
         
         this.currentRequest = JSON.parse(JSON.stringify(req)); // Deep copy
         
+        // Recalculate supplier groups with FRESH supplier data (delivery fees may have changed)
+        this.recalculateWithFreshSupplierData();
+        
         Modal.open({
             title: `📋 Review: ${req.requestNumber}`,
-            content: this.getReviewContent(req),
+            content: this.getReviewContent(this.currentRequest),
             saveText: '✓ Approve & Generate PO',
             width: '900px',
             onSave: () => this.approveRequest(requestId)
         });
+    },
+    
+    // Recalculate all items and groups with fresh supplier data
+    recalculateWithFreshSupplierData() {
+        if (!this.currentRequest) return;
+        
+        // Update each item with fresh supplier info
+        this.currentRequest.items.forEach(item => {
+            const supplier = Suppliers.getById(item.selectedSupplierId);
+            if (supplier) {
+                item.supplierName = supplier.companyName;
+            }
+            
+            // Get fresh price data
+            const priceData = IngredientPrices.data.find(p => 
+                p.ingredientId === item.ingredientId && p.supplierId === item.selectedSupplierId
+            );
+            
+            if (priceData) {
+                item.unitPrice = priceData.purchasePrice;
+                item.packageSize = priceData.packageSize;
+                item.packagesNeeded = Math.ceil(item.qtyNeeded / priceData.packageSize);
+                item.totalPrice = item.packagesNeeded * priceData.purchasePrice;
+                item.costPerGram = priceData.costPerGram;
+            }
+        });
+        
+        // Recalculate supplier groups (this will use fresh delivery fees)
+        this.currentRequest.supplierGroups = this.groupBySupplier(this.currentRequest.items);
+        this.currentRequest.grandTotal = this.currentRequest.supplierGroups.reduce((sum, g) => sum + g.groupTotal, 0);
     },
     
     getReviewContent(req) {
@@ -454,8 +487,6 @@ const PurchaseRequests = {
                                     <th style="padding: 8px; text-align: left;">Location</th>
                                     <th style="padding: 8px; text-align: right;">Unit Price</th>
                                     <th style="padding: 8px; text-align: right;">Item Total</th>
-                                    <th style="padding: 8px; text-align: right;">Delivery</th>
-                                    <th style="padding: 8px; text-align: right;">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -478,17 +509,14 @@ const PurchaseRequests = {
                                         <td style="padding: 8px; text-align: right;">
                                             ${Utils.formatCurrency(row.purchasePrice)}/${row.packageSize}g
                                         </td>
-                                        <td style="padding: 8px; text-align: right;">${Utils.formatCurrency(row.itemTotal)}</td>
-                                        <td style="padding: 8px; text-align: right;">
-                                            ${row.deliveryFee > 0 ? '+' + Utils.formatCurrency(row.deliveryFee) : 'FREE'}
-                                        </td>
-                                        <td style="padding: 8px; text-align: right; font-weight: bold;">
-                                            ${Utils.formatCurrency(row.grandTotal)}
-                                        </td>
+                                        <td style="padding: 8px; text-align: right; font-weight: bold;">${Utils.formatCurrency(row.itemTotal)}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 8px 0 0; font-style: italic;">
+                            💡 Delivery fee is calculated per supplier in the Order Summary below
+                        </p>
                     ` : `
                         <p class="empty-state">No supplier prices available for this ingredient</p>
                     `}
@@ -502,22 +530,41 @@ const PurchaseRequests = {
         
         return groups.map(group => `
             <div style="background: white; padding: 12px; border-radius: 8px; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <div>
                         <strong>${group.supplierName}</strong>
                         <span style="color: var(--text-secondary); margin-left: 8px;">(${group.location})</span>
                     </div>
-                    <div style="text-align: right;">
-                        <div>Items: ${Utils.formatCurrency(group.subtotal)}</div>
-                        <div style="color: ${group.deliveryFee > 0 ? 'var(--warning)' : 'var(--success)'};">
-                            Delivery: ${group.deliveryFee > 0 ? Utils.formatCurrency(group.deliveryFee) : 'FREE'}
+                </div>
+                
+                <!-- Individual items -->
+                <div style="font-size: 0.85rem; border-top: 1px solid var(--bg-input); padding-top: 8px;">
+                    ${group.items.map(item => `
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span>${item.ingredientName} <span style="color: var(--text-secondary);">(${item.packagesNeeded} × ${item.packageSize}g)</span></span>
+                            <span>${Utils.formatCurrency(item.totalPrice)}</span>
                         </div>
-                        <div style="font-weight: bold; color: var(--primary);">${Utils.formatCurrency(group.groupTotal)}</div>
+                    `).join('')}
+                </div>
+                
+                <!-- Subtotal, Delivery, Total -->
+                <div style="border-top: 1px solid var(--bg-input); margin-top: 8px; padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                        <span>Items Subtotal:</span>
+                        <span>${Utils.formatCurrency(group.subtotal)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: ${group.deliveryFee > 0 ? 'var(--warning)' : 'var(--success)'};">
+                        <span>🚚 Delivery:</span>
+                        <span>${group.deliveryFee > 0 ? Utils.formatCurrency(group.deliveryFee) : 'FREE'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--primary); margin-top: 4px; font-size: 1rem;">
+                        <span>Supplier Total:</span>
+                        <span>${Utils.formatCurrency(group.groupTotal)}</span>
                     </div>
                 </div>
-                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">
-                    ${group.items.map(i => i.ingredientName).join(', ')}
-                </div>
+            </div>
+        `).join('');
+    },
             </div>
         `).join('');
     },
