@@ -19,7 +19,84 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <!-- App Container -->
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <div class="login-header">
+                <span class="login-logo">🍞</span>
+                <h1>BreadHub ProofMaster</h1>
+                <p>Bakery Production Management</p>
+            </div>
+            
+            <!-- Login Form -->
+            <div id="loginForm" class="auth-form">
+                <h2>Sign In</h2>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" class="form-input" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" class="form-input" placeholder="Enter password">
+                </div>
+                <button id="loginBtn" class="btn btn-primary btn-block" data-original-text="Sign In" onclick="Auth.signIn()">
+                    Sign In
+                </button>
+                <div class="auth-links">
+                    <a href="#" onclick="Auth.showForgotPasswordForm(); return false;">Forgot password?</a>
+                    <a href="#" onclick="Auth.showSignupForm(); return false;">Create account</a>
+                </div>
+            </div>
+            
+            <!-- Signup Form -->
+            <div id="signupForm" class="auth-form" style="display: none;">
+                <h2>Create Account</h2>
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="signupName" class="form-input" placeholder="Juan Dela Cruz">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="signupEmail" class="form-input" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="signupPassword" class="form-input" placeholder="Min 6 characters">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" id="signupConfirmPassword" class="form-input" placeholder="Confirm password">
+                </div>
+                <button id="signupBtn" class="btn btn-primary btn-block" data-original-text="Create Account" onclick="Auth.signUp()">
+                    Create Account
+                </button>
+                <div class="auth-links">
+                    <a href="#" onclick="Auth.showLoginForm(); return false;">← Back to Sign In</a>
+                </div>
+            </div>
+            
+            <!-- Forgot Password Form -->
+            <div id="forgotPasswordForm" class="auth-form" style="display: none;">
+                <h2>Reset Password</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Enter your email and we'll send you a reset link.
+                </p>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="resetEmail" class="form-input" placeholder="your@email.com">
+                </div>
+                <button id="resetBtn" class="btn btn-primary btn-block" data-original-text="Send Reset Link" onclick="Auth.resetPassword()">
+                    Send Reset Link
+                </button>
+                <div class="auth-links">
+                    <a href="#" onclick="Auth.showLoginForm(); return false;">← Back to Sign In</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Container (hidden until logged in) -->
+    <div id="appContainer" style="display: none;">
     <div id="app">
         <!-- Sidebar Navigation -->
         <nav class="sidebar">
@@ -75,7 +152,7 @@
             <div class="nav-section">
                 <span class="nav-label">Reports</span>
                 <ul class="nav-menu">
-                    <li><a href="#" data-view="costs" class="nav-link">
+                    <li><a href="#" data-view="costs" class="nav-link" data-min-role="manager">
                         <span class="nav-icon">💰</span> Cost Analysis
                     </a></li>
                     <li><a href="#" data-view="history" class="nav-link">
@@ -84,7 +161,24 @@
                 </ul>
             </div>
             
+            <div class="nav-section" data-min-role="admin">
+                <span class="nav-label">Admin</span>
+                <ul class="nav-menu">
+                    <li><a href="#" data-view="users" class="nav-link">
+                        <span class="nav-icon">👥</span> User Management
+                    </a></li>
+                </ul>
+            </div>
+            
             <div class="sidebar-footer">
+                <div class="user-info" id="userInfo">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <span class="user-name" id="currentUserName">Loading...</span>
+                        <span class="user-role" id="currentUserRole">-</span>
+                    </div>
+                    <button class="btn-icon" onclick="Auth.signOut()" title="Sign Out">🚪</button>
+                </div>
                 <div class="connection-status" id="connectionStatus">
                     <span class="status-dot offline"></span>
                     <span class="status-text">Connecting...</span>
@@ -484,9 +578,34 @@
                         </table>
                     </div>
                 </div>
+                
+                <!-- Users Management View (Admin Only) -->
+                <div id="usersView" class="view">
+                    <div class="view-header">
+                        <h2>👥 User Management</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="usersTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
+    </div> <!-- End appContainer -->
 
     <!-- Modal Container -->
     <div class="modal-overlay" id="modalOverlay">
@@ -523,6 +642,8 @@
     <script src="js/firebase-init.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/modal.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/users.js"></script>
     <script src="js/suppliers.js"></script>
     <script src="js/ingredients.js"></script>
     <script src="js/doughs.js"></script>

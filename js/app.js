@@ -19,12 +19,8 @@ const App = {
         Toast.init();
         Alert.init();
         
-        // Load all data
-        await this.loadData();
-        
-        // Initialize modules
-        Production.init();
-        Timers.init();
+        // Initialize Auth (this will trigger loadData after login)
+        Auth.init();
         
         // Setup event listeners
         this.setupEventListeners();
@@ -32,11 +28,7 @@ const App = {
         // Start clock
         this.startClock();
         
-        // Show dashboard
-        this.showView('dashboard');
-        
         console.log('BreadHub ProofMaster initialized!');
-        Toast.success('Application ready');
     },
     
     async loadData() {
@@ -53,8 +45,22 @@ const App = {
                 Products.init()
             ]);
             
+            // Load users if admin
+            if (Auth.hasRole('admin')) {
+                await Users.init();
+            }
+            
+            // Initialize modules
+            Production.init();
+            Timers.init();
+            
             // Refresh production after products loaded
             Production.loadProductSelect();
+            
+            // Show dashboard
+            this.showView('dashboard');
+            
+            Toast.success('Application ready');
             
         } catch (error) {
             console.error('Error loading data:', error);
@@ -119,7 +125,8 @@ const App = {
             fillings: { title: 'Fillings', subtitle: 'Manage filling recipes' },
             products: { title: 'Products', subtitle: 'Manage product assembly' },
             costs: { title: 'Cost Analysis', subtitle: 'Analyze production costs' },
-            history: { title: 'Production History', subtitle: 'View past production runs' }
+            history: { title: 'Production History', subtitle: 'View past production runs' },
+            users: { title: 'User Management', subtitle: 'Manage users and roles (Admin only)' }
         };
         
         const config = titles[viewName] || { title: viewName, subtitle: '' };
@@ -159,6 +166,11 @@ const App = {
                 break;
             case 'history':
                 this.loadHistory();
+                break;
+            case 'users':
+                if (Auth.hasRole('admin')) {
+                    Users.load().then(() => Users.render());
+                }
                 break;
         }
     },
