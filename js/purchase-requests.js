@@ -397,6 +397,14 @@ const PurchaseRequests = {
                         </span>
                     </div>
                 </div>
+                
+                <!-- Reviewer Notes -->
+                <div style="margin-top: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 500;">📝 Reviewer Notes (optional)</label>
+                    <textarea id="reviewerNotes" class="form-textarea" rows="2" 
+                              placeholder="e.g., Changed supplier for better price, adjusted flour quantity..."
+                              style="width: 100%;">${req.reviewerNotes || ''}</textarea>
+                </div>
             </div>
         `;
     },
@@ -404,19 +412,35 @@ const PurchaseRequests = {
     renderItemReview(item, idx) {
         // Get comparison table for this ingredient
         const comparison = IngredientPrices.getComparisonTable(item.ingredientId, item.qtyNeeded);
+        const qtyKg = (item.qtyNeeded / 1000).toFixed(2);
         
         return `
-            <div style="border: 1px solid var(--bg-input); border-radius: 10px; margin-bottom: 16px; overflow: hidden;">
-                <div style="background: var(--bg-input); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
+            <div id="reviewItem_${idx}" style="border: 1px solid var(--bg-input); border-radius: 10px; margin-bottom: 16px; overflow: hidden;">
+                <div style="background: var(--bg-input); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <strong>${item.ingredientName}</strong>
-                        <span style="color: var(--text-secondary); margin-left: 12px;">
-                            Need: ${item.qtyNeeded >= 1000 ? (item.qtyNeeded/1000).toFixed(1) + 'kg' : item.qtyNeeded + 'g'}
-                            (${item.packagesNeeded} package${item.packagesNeeded > 1 ? 's' : ''})
+                        
+                        <!-- Quantity Adjustment -->
+                        <div style="display: flex; align-items: center; gap: 6px; background: white; padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd;">
+                            <label style="font-size: 0.85rem; color: var(--text-secondary);">Qty:</label>
+                            <input type="number" id="reviewQty_${idx}" value="${qtyKg}" 
+                                   min="0.1" step="0.1" style="width: 70px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; text-align: right;"
+                                   onchange="PurchaseRequests.updateItemQuantity(${idx})">
+                            <select id="reviewUnit_${idx}" style="padding: 4px; border: 1px solid #ddd; border-radius: 4px;" onchange="PurchaseRequests.updateItemQuantity(${idx})">
+                                <option value="kg" selected>kg</option>
+                                <option value="g">g</option>
+                            </select>
+                        </div>
+                        
+                        <span style="color: var(--text-secondary); font-size: 0.85rem;">
+                            → ${item.packagesNeeded} pkg${item.packagesNeeded > 1 ? 's' : ''} @ ${item.packageSize}g
                         </span>
                     </div>
-                    <div>
-                        <strong style="color: var(--primary);">${Utils.formatCurrency(item.totalPrice)}</strong>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <strong style="color: var(--primary);" id="reviewItemTotal_${idx}">${Utils.formatCurrency(item.totalPrice)}</strong>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="PurchaseRequests.removeItemFromReview(${idx})" title="Remove item" style="padding: 4px 8px;">
+                            ✕
+                        </button>
                     </div>
                 </div>
                 
@@ -531,8 +555,108 @@ const PurchaseRequests = {
             Utils.formatCurrency(this.currentRequest.grandTotal);
     },
 
+    // Update item quantity during review
+    updateItemQuantity(itemIdx) {
+        if (!this.currentRequest) return;
+        
+        const item = this.currentRequest.items[itemIdx];
+        if (!item) return;
+        
+        const qtyInput = document.getElementById(`reviewQty_${itemIdx}`);
+        const unitSelect = document.getElementById(`reviewUnit_${itemIdx}`);
+        
+        if (!qtyInput || !unitSelect) return;
+        
+        let newQtyGrams = parseFloat(qtyInput.value) || 0;
+        if (unitSelect.value === 'kg') newQtyGrams *= 1000;
+        
+        if (newQtyGrams <= 0) {
+            Toast.error('Quantity must be greater than 0');
+            return;
+        }
+        
+        // Update item
+        item.qtyNeeded = newQtyGrams;
+        item.packagesNeeded = Math.ceil(newQtyGrams / item.packageSize);
+        item.totalPrice = item.packagesNeeded * item.unitPrice;
+        
+        // Recalculate groups
+        this.currentRequest.supplierGroups = this.groupBySupplier(this.currentRequest.items);
+        this.currentRequest.grandTotal = this.currentRequest.supplierGroups.reduce((sum, g) => sum + g.groupTotal, 0);
+        
+        // Update displays
+        document.getElementById(`reviewItemTotal_${itemIdx}`).textContent = Utils.formatCurrency(item.totalPrice);
+        document.getElementById('supplierGroupsSummary').innerHTML = 
+            this.renderSupplierGroups(this.currentRequest.supplierGroups);
+        document.getElementById('grandTotalDisplay').textContent = 
+            Utils.formatCurrency(this.currentRequest.grandTotal);
+        
+        // Update the packages info text
+        const itemDiv = document.getElementById(`reviewItem_${itemIdx}`);
+        if (itemDiv) {
+            const infoSpan = itemDiv.querySelector('span[style*="text-secondary"]');
+            if (infoSpan) {
+                infoSpan.textContent = `→ ${item.packagesNeeded} pkg${item.packagesNeeded > 1 ? 's' : ''} @ ${item.packageSize}g`;
+            }
+        }
+    },
+    
+    // Remove item from review
+    removeItemFromReview(itemIdx) {
+        if (!this.currentRequest) return;
+        
+        const item = this.currentRequest.items[itemIdx];
+        if (!item) return;
+        
+        // Confirm removal
+        if (!confirm(`Remove "${item.ingredientName}" from this request?`)) return;
+        
+        // Remove item
+        this.currentRequest.items.splice(itemIdx, 1);
+        
+        // Check if any items left
+        if (this.currentRequest.items.length === 0) {
+            Toast.error('Cannot remove all items. Delete the request instead.');
+            // Re-add the item back
+            this.currentRequest.items.splice(itemIdx, 0, item);
+            return;
+        }
+        
+        // Recalculate groups
+        this.currentRequest.supplierGroups = this.groupBySupplier(this.currentRequest.items);
+        this.currentRequest.grandTotal = this.currentRequest.supplierGroups.reduce((sum, g) => sum + g.groupTotal, 0);
+        
+        // Re-render all items (indices changed)
+        this.refreshReviewItemsDisplay();
+        
+        Toast.success(`Removed "${item.ingredientName}"`);
+    },
+    
+    // Refresh review items display
+    refreshReviewItemsDisplay() {
+        const container = document.getElementById('reviewItemsContainer');
+        if (!container || !this.currentRequest) return;
+        
+        container.innerHTML = this.currentRequest.items
+            .map((item, idx) => this.renderItemReview(item, idx))
+            .join('');
+        
+        document.getElementById('supplierGroupsSummary').innerHTML = 
+            this.renderSupplierGroups(this.currentRequest.supplierGroups);
+        document.getElementById('grandTotalDisplay').textContent = 
+            Utils.formatCurrency(this.currentRequest.grandTotal);
+    },
+
     async approveRequest(requestId) {
         if (!this.currentRequest) return;
+        
+        // Check if there are items
+        if (!this.currentRequest.items || this.currentRequest.items.length === 0) {
+            Toast.error('Cannot approve - no items in request');
+            return;
+        }
+        
+        const reviewerNotes = document.getElementById('reviewerNotes')?.value || '';
         
         try {
             await DB.update('purchaseRequests', requestId, {
@@ -540,6 +664,7 @@ const PurchaseRequests = {
                 items: this.currentRequest.items,
                 supplierGroups: this.currentRequest.supplierGroups,
                 grandTotal: this.currentRequest.grandTotal,
+                reviewerNotes: reviewerNotes,
                 approvedBy: Auth.currentUser?.uid,
                 approvedByName: Auth.userProfile?.displayName || 'Unknown',
                 approvedAt: new Date().toISOString()
