@@ -565,9 +565,6 @@ const PurchaseRequests = {
             </div>
         `).join('');
     },
-            </div>
-        `).join('');
-    },
     
     changeSupplier(itemIdx, newSupplierId) {
         if (!this.currentRequest) return;
