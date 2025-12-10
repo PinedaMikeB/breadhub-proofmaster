@@ -157,17 +157,33 @@ const Suppliers = {
                         </div>
                     ` : ''}
                     
-                    <h4 style="margin: 20px 0 12px;">Ingredients from this Supplier:</h4>
+                    <h4 style="margin: 20px 0 12px;">📦 Ingredients from this Supplier (${ingredients.length}):</h4>
                     ${ingredients.length > 0 ? `
-                        <div style="max-height: 200px; overflow-y: auto;">
-                            ${ingredients.map(ing => `
-                                <div class="recipe-stat">
-                                    <span>${ing.name}</span>
-                                    <span>${Utils.formatCurrency(ing.costPerGram)}/g</span>
-                                </div>
-                            `).join('')}
+                        <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--bg-input); border-radius: 8px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                                <thead style="background: var(--bg-input); position: sticky; top: 0;">
+                                    <tr>
+                                        <th style="padding: 10px; text-align: left;">Ingredient</th>
+                                        <th style="padding: 10px; text-align: right;">Package</th>
+                                        <th style="padding: 10px; text-align: right;">Cost/gram</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${ingredients.map(ing => `
+                                        <tr style="border-bottom: 1px solid var(--bg-input);">
+                                            <td style="padding: 10px;">${ing.name}</td>
+                                            <td style="padding: 10px; text-align: right;">
+                                                ${Utils.formatCurrency(ing.purchasePrice || 0)} / ${ing.packageSize || 0}g
+                                            </td>
+                                            <td style="padding: 10px; text-align: right; font-weight: bold; color: var(--primary);">
+                                                ${Utils.formatCurrency(ing.costPerGram || 0)}
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
                         </div>
-                    ` : '<p class="empty-state">No ingredients yet</p>'}
+                    ` : '<p class="empty-state">No ingredients yet. Tag this supplier when adding ingredients.</p>'}
                 </div>
             `,
             showFooter: false,

@@ -89,6 +89,9 @@ const App = {
         // Update current view
         this.currentView = viewName;
         
+        // Close mobile menu if open
+        this.closeMobileMenu();
+        
         // Hide all views
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         
@@ -294,6 +297,23 @@ const App = {
         
         updateClock();
         setInterval(updateClock, 1000);
+    },
+    
+    // Mobile menu functions
+    toggleMobileMenu() {
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('active');
+    },
+    
+    closeMobileMenu() {
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
     }
 };
 

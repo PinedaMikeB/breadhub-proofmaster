@@ -97,6 +97,15 @@
 
     <!-- App Container (hidden until logged in) -->
     <div id="appContainer" style="display: none;">
+    
+    <!-- Mobile Menu Button -->
+    <button class="mobile-menu-toggle" id="mobileMenuToggle" onclick="App.toggleMobileMenu()">
+        ☰
+    </button>
+    
+    <!-- Sidebar Overlay (for closing menu) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="App.closeMobileMenu()"></div>
+    
     <div id="app">
         <!-- Sidebar Navigation -->
         <nav class="sidebar">

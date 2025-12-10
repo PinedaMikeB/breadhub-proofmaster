@@ -1300,3 +1300,192 @@ a {
     padding: 6px 12px;
     font-size: 0.85rem;
 }
+
+
+/* ========================================
+   MOBILE RESPONSIVE STYLES
+   ======================================== */
+
+/* Mobile Menu Toggle Button */
+.mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 1001;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+}
+
+.mobile-menu-toggle:hover {
+    background: var(--primary-dark);
+}
+
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+}
+
+.sidebar-overlay.active {
+    display: block;
+}
+
+/* Better content width */
+.content-area {
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-lg);
+}
+
+/* Cards Grid - better responsive */
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--space-lg);
+}
+
+/* Tablet styles */
+@media (max-width: 1024px) {
+    .main-content {
+        padding: var(--space-md);
+    }
+    
+    .view-header {
+        flex-direction: column;
+        gap: var(--space-md);
+        align-items: flex-start;
+    }
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+    /* Show mobile menu button */
+    .mobile-menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Hide sidebar by default on mobile */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        height: 100vh;
+        z-index: 1000;
+        transition: left 0.3s ease;
+        width: 280px;
+        min-width: 280px;
+    }
+    
+    .sidebar.open {
+        left: 0;
+    }
+    
+    /* Adjust main content for mobile */
+    .main-content {
+        margin-left: 0;
+        padding: 70px var(--space-md) var(--space-md);
+    }
+    
+    /* Main header adjustments */
+    .main-header {
+        flex-direction: column;
+        gap: var(--space-md);
+        align-items: flex-start;
+        padding-left: 60px;
+    }
+    
+    .header-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    /* Page title smaller on mobile */
+    .page-title {
+        font-size: 1.5rem;
+    }
+    
+    /* Cards full width on mobile */
+    .cards-grid,
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Table scroll on mobile */
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    .data-table {
+        min-width: 600px;
+    }
+    
+    /* Modal full screen on mobile */
+    .modal {
+        width: 95%;
+        max-width: none;
+        max-height: 90vh;
+        margin: 5vh auto;
+    }
+    
+    /* Form grids stack on mobile */
+    .modal form [style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Login screen mobile */
+    .login-container {
+        padding: 24px;
+        margin: 10px;
+    }
+    
+    /* Production workflow cards */
+    .workflow-step {
+        padding: var(--space-md);
+    }
+}
+
+/* Small mobile */
+@media (max-width: 480px) {
+    .main-content {
+        padding: 70px var(--space-sm) var(--space-sm);
+    }
+    
+    .card {
+        padding: var(--space-md);
+    }
+    
+    .btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+    
+    .recipe-card-actions {
+        flex-direction: column;
+    }
+    
+    .recipe-card-actions .btn {
+        width: 100%;
+    }
+}
