@@ -7,12 +7,12 @@
 
 const CONFIG = {
     firebase: {
-        apiKey: "YOUR_API_KEY",
-        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-        projectId: "YOUR_PROJECT_ID",
-        storageBucket: "YOUR_PROJECT_ID.appspot.com",
-        messagingSenderId: "YOUR_SENDER_ID",
-        appId: "YOUR_APP_ID"
+        apiKey: "AIzaSyAj2szYv9ynVFrxdH0tpUsOg7JmJn6Wq0g",
+        authDomain: "breadhub-proofmaster.firebaseapp.com",
+        projectId: "breadhub-proofmaster",
+        storageBucket: "breadhub-proofmaster.firebasestorage.app",
+        messagingSenderId: "222137689770",
+        appId: "1:222137689770:web:645c552afa835732c852d3"
     },
     
     // Application settings
