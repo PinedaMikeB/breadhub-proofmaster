@@ -7,6 +7,9 @@ const Auth = {
     currentUser: null,
     userProfile: null,
     
+    // OWNER EMAIL - this email will always be admin
+    ownerEmail: 'michael.marga@gmail.com',
+    
     // Available roles
     roles: {
         admin: { name: 'Admin', level: 100, description: 'Full access to everything' },
@@ -165,23 +168,22 @@ const Auth = {
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
             
-            // Check if this is the first user (make them admin)
-            const usersSnapshot = await db.collection('users').get();
-            const isFirstUser = usersSnapshot.empty;
+            // Check if this is the owner email
+            const isOwner = email.toLowerCase() === this.ownerEmail.toLowerCase();
             
             // Create user profile in Firestore
             await db.collection('users').doc(user.uid).set({
                 uid: user.uid,
                 email: email,
                 displayName: name,
-                role: isFirstUser ? 'admin' : 'baker', // First user is admin
-                approved: isFirstUser ? true : false,  // First user auto-approved
+                role: isOwner ? 'admin' : 'baker',    // Owner = admin, others = baker
+                approved: isOwner ? true : false,      // Owner auto-approved
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                createdBy: isFirstUser ? 'system' : null
+                createdBy: isOwner ? 'system' : null
             });
             
-            Toast.success(isFirstUser 
-                ? 'Account created! You are the admin.' 
+            Toast.success(isOwner 
+                ? 'Welcome! You are the admin.' 
                 : 'Account created! Waiting for admin approval.');
             
         } catch (error) {
