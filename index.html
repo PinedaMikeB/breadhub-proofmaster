@@ -301,9 +301,14 @@
                 <div id="ingredientsView" class="view">
                     <div class="view-header">
                         <h2>Master Ingredients</h2>
-                        <button class="btn btn-primary" onclick="Ingredients.showAddModal()">
-                            + Add Ingredient
-                        </button>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-secondary" onclick="Ingredients.showImportModal()">
+                                📥 Import Data
+                            </button>
+                            <button class="btn btn-primary" onclick="Ingredients.showAddModal()">
+                                + Add Ingredient
+                            </button>
+                        </div>
                     </div>
                     <div style="background: #E8F5E9; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--success);">
                         <strong>💡 New:</strong> Each ingredient can have multiple suppliers. Click <strong>"Prices"</strong> to add/manage supplier prices.
