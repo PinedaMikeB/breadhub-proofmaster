@@ -46,6 +46,7 @@ const Modal = {
             title = 'Modal',
             content = '',
             saveText = 'Save',
+            saveClass = 'btn-primary',
             showFooter = true,
             onSave = null,
             width = '600px'
@@ -56,6 +57,9 @@ const Modal = {
         this.saveBtn.textContent = saveText;
         this.onSave = onSave;
         this.modal.style.maxWidth = width;
+        
+        // Reset button classes and apply new one
+        this.saveBtn.className = `btn ${saveClass}`;
         
         this.footer.style.display = showFooter ? 'flex' : 'none';
         this.overlay.classList.add('active');

@@ -92,10 +92,12 @@ const PurchaseRequests = {
                                     <button class="btn btn-secondary btn-sm" onclick="PurchaseRequests.view('${req.id}')">View</button>
                                     ${req.status === 'pending' ? `
                                         <button class="btn btn-primary btn-sm" onclick="PurchaseRequests.review('${req.id}')">Review</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="PurchaseRequests.edit('${req.id}')">Edit</button>
                                     ` : ''}
                                     ${req.status === 'approved' ? `
                                         <button class="btn btn-primary btn-sm" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">Purchase</button>
                                     ` : ''}
+                                    <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                                 </td>
                             </tr>
                         `).join('') : `
@@ -143,10 +145,14 @@ const PurchaseRequests = {
                 <div class="recipe-card-actions">
                     ${req.status === 'pending' ? `
                         <button class="btn btn-primary" onclick="PurchaseRequests.review('${req.id}')">Review & Approve</button>
+                        <button class="btn btn-secondary" onclick="PurchaseRequests.edit('${req.id}')">Edit</button>
+                        <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                     ` : req.status === 'approved' ? `
                         <button class="btn btn-primary" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">View PO</button>
+                        <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                     ` : `
                         <button class="btn btn-secondary" onclick="PurchaseRequests.view('${req.id}')">View</button>
+                        <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                     `}
                 </div>
             </div>
@@ -625,6 +631,18 @@ const PurchaseRequests = {
                     
                     <h4 style="margin: 16px 0 8px;">By Supplier</h4>
                     ${this.renderSupplierGroups(req.supplierGroups)}
+                    
+                    <!-- Action Buttons -->
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--bg-input); display: flex; gap: 12px; justify-content: flex-end;">
+                        ${req.status === 'pending' ? `
+                            <button class="btn btn-secondary" onclick="Modal.close(); PurchaseRequests.edit('${req.id}');">✏️ Edit</button>
+                            <button class="btn btn-primary" onclick="Modal.close(); PurchaseRequests.review('${req.id}');">Review & Approve</button>
+                        ` : ''}
+                        ${req.status === 'approved' ? `
+                            <button class="btn btn-primary" onclick="Modal.close(); PurchaseRequests.showPurchaseOrder('${req.id}');">View PO</button>
+                        ` : ''}
+                        <button class="btn btn-danger" onclick="Modal.close(); PurchaseRequests.confirmDelete('${req.id}');">🗑 Delete</button>
+                    </div>
                 </div>
             `,
             showFooter: false,
@@ -775,6 +793,281 @@ const PurchaseRequests = {
         } catch (error) {
             console.error('Error cancelling:', error);
             Toast.error('Failed to cancel');
+        }
+    },
+
+    // ========== EDIT FUNCTIONALITY ==========
+    
+    async edit(requestId) {
+        const req = this.data.find(r => r.id === requestId);
+        if (!req) return;
+        
+        // Only pending requests can be edited
+        if (req.status !== 'pending') {
+            Toast.error('Only pending requests can be edited');
+            return;
+        }
+        
+        this.currentRequest = JSON.parse(JSON.stringify(req)); // Deep copy
+        
+        Modal.open({
+            title: `✏️ Edit: ${req.requestNumber}`,
+            content: this.getEditContent(req),
+            saveText: 'Save Changes',
+            width: '700px',
+            onSave: () => this.saveEdit(requestId)
+        });
+    },
+    
+    getEditContent(req) {
+        // Build ingredient selection with pre-selected items
+        const selectedIngredientIds = req.items.map(i => i.ingredientId);
+        
+        return `
+            <form id="editPurchaseRequestForm">
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Modify items and quantities. Save to update the request.
+                </p>
+                
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--bg-input); border-radius: 8px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: var(--bg-input); position: sticky; top: 0;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; width: 40px;">
+                                    <input type="checkbox" id="editSelectAll" onclick="PurchaseRequests.toggleEditSelectAll()">
+                                </th>
+                                <th style="padding: 12px; text-align: left;">Ingredient</th>
+                                <th style="padding: 12px; text-align: right; width: 120px;">Qty Needed</th>
+                                <th style="padding: 12px; text-align: center; width: 80px;">Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${Ingredients.data.map(ing => {
+                                const existingItem = req.items.find(i => i.ingredientId === ing.id);
+                                const isSelected = !!existingItem;
+                                const qtyKg = existingItem ? (existingItem.qtyNeeded / 1000) : 0;
+                                
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--bg-input);">
+                                        <td style="padding: 12px;">
+                                            <input type="checkbox" name="edit_ingredient_${ing.id}" 
+                                                   data-ingredient-id="${ing.id}" ${isSelected ? 'checked' : ''}>
+                                        </td>
+                                        <td style="padding: 12px;">
+                                            <strong>${ing.name}</strong>
+                                            <br><small style="color: var(--text-secondary);">${Ingredients.formatCategory(ing.category)}</small>
+                                        </td>
+                                        <td style="padding: 12px; text-align: right;">
+                                            <input type="number" name="edit_qty_${ing.id}" class="form-input" 
+                                                   style="width: 100px; text-align: right;" min="0" step="0.1"
+                                                   value="${qtyKg || ''}" placeholder="0">
+                                        </td>
+                                        <td style="padding: 12px; text-align: center;">
+                                            <select name="edit_unit_${ing.id}" class="form-select" style="width: 80px;">
+                                                <option value="g">g</option>
+                                                <option value="kg" selected>kg</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="form-group" style="margin-top: 16px;">
+                    <label>Notes (optional)</label>
+                    <textarea name="editNotes" class="form-textarea" 
+                              placeholder="e.g., Need by Friday, running low for weekend production">${req.notes || ''}</textarea>
+                </div>
+            </form>
+        `;
+    },
+    
+    toggleEditSelectAll() {
+        const selectAll = document.getElementById('editSelectAll');
+        const checkboxes = document.querySelectorAll('[name^="edit_ingredient_"]');
+        checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    },
+    
+    async saveEdit(requestId) {
+        // Collect selected items
+        const items = [];
+        
+        Ingredients.data.forEach(ing => {
+            const checkbox = document.querySelector(`[name="edit_ingredient_${ing.id}"]`);
+            const qtyInput = document.querySelector(`[name="edit_qty_${ing.id}"]`);
+            const unitSelect = document.querySelector(`[name="edit_unit_${ing.id}"]`);
+            
+            if (checkbox?.checked && qtyInput?.value > 0) {
+                let qtyGrams = parseFloat(qtyInput.value);
+                if (unitSelect?.value === 'kg') qtyGrams *= 1000;
+                
+                // Find best supplier (cheapest in service area)
+                const bestPrice = IngredientPrices.getCheapest(ing.id, true);
+                const supplier = bestPrice ? Suppliers.getById(bestPrice.supplierId) : null;
+                
+                // Calculate packages needed
+                const packageSize = bestPrice?.packageSize || 1000;
+                const packagesNeeded = Math.ceil(qtyGrams / packageSize);
+                const unitPrice = bestPrice?.purchasePrice || 0;
+                const totalPrice = packagesNeeded * unitPrice;
+                
+                items.push({
+                    ingredientId: ing.id,
+                    ingredientName: ing.name,
+                    qtyNeeded: qtyGrams,
+                    packageSize,
+                    packagesNeeded,
+                    suggestedSupplierId: bestPrice?.supplierId || null,
+                    selectedSupplierId: bestPrice?.supplierId || null,
+                    supplierName: supplier?.companyName || 'No supplier',
+                    unitPrice,
+                    totalPrice,
+                    costPerGram: bestPrice?.costPerGram || 0
+                });
+            }
+        });
+        
+        if (items.length === 0) {
+            Toast.error('Please select at least one ingredient with quantity');
+            return;
+        }
+        
+        // Calculate supplier groups and totals
+        const supplierGroups = this.groupBySupplier(items);
+        const grandTotal = supplierGroups.reduce((sum, g) => sum + g.groupTotal, 0);
+        
+        const notes = document.querySelector('[name="editNotes"]')?.value || '';
+        
+        try {
+            await DB.update('purchaseRequests', requestId, {
+                items,
+                supplierGroups,
+                grandTotal,
+                notes,
+                lastEditedBy: Auth.currentUser?.uid,
+                lastEditedByName: Auth.userProfile?.displayName || 'Unknown',
+                lastEditedAt: new Date().toISOString()
+            });
+            
+            Toast.success('Purchase request updated!');
+            Modal.close();
+            await this.load();
+            this.render();
+        } catch (error) {
+            console.error('Error updating request:', error);
+            Toast.error('Failed to update request');
+        }
+    },
+
+    // ========== DELETE FUNCTIONALITY ==========
+    
+    confirmDelete(requestId) {
+        const req = this.data.find(r => r.id === requestId);
+        if (!req) return;
+        
+        const status = this.statuses[req.status];
+        let warningMessage = '';
+        let confirmText = 'Delete';
+        
+        // Different warnings based on status
+        switch (req.status) {
+            case 'purchased':
+                warningMessage = `
+                    <div style="background: #FDEDEC; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--danger);">
+                        <strong>⚠️ Warning:</strong> This request has been <strong>purchased</strong>. 
+                        Deleting it will remove the record but ingredient prices have already been updated. 
+                        Consider keeping it for audit purposes.
+                    </div>
+                `;
+                confirmText = 'Delete Permanently';
+                break;
+            case 'approved':
+                warningMessage = `
+                    <div style="background: #FEF9E7; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--warning);">
+                        <strong>⚠️ Note:</strong> This request has been <strong>approved</strong> and may be in process. 
+                        Make sure no one is working on this purchase.
+                    </div>
+                `;
+                break;
+            case 'pending':
+                warningMessage = `
+                    <div style="background: #EBF5FB; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--info);">
+                        <strong>ℹ️ Info:</strong> This request is still <strong>pending review</strong>. 
+                        You can safely delete it.
+                    </div>
+                `;
+                break;
+            default:
+                warningMessage = '';
+        }
+        
+        Modal.open({
+            title: `🗑️ Delete Request: ${req.requestNumber}`,
+            content: `
+                <div style="padding: 8px 0;">
+                    ${warningMessage}
+                    
+                    <div style="background: var(--bg-input); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="recipe-stat">
+                                <span>Request #:</span>
+                                <strong>${req.requestNumber}</strong>
+                            </div>
+                            <div class="recipe-stat">
+                                <span>Status:</span>
+                                <span class="badge" style="background: ${status?.color}; color: white;">
+                                    ${status?.label || req.status}
+                                </span>
+                            </div>
+                            <div class="recipe-stat">
+                                <span>Items:</span>
+                                <span>${req.items?.length || 0} ingredients</span>
+                            </div>
+                            <div class="recipe-stat">
+                                <span>Total:</span>
+                                <strong style="color: var(--primary);">${Utils.formatCurrency(req.grandTotal || 0)}</strong>
+                            </div>
+                            <div class="recipe-stat">
+                                <span>Created:</span>
+                                <span>${Utils.formatDateTime(req.createdAt)}</span>
+                            </div>
+                            <div class="recipe-stat">
+                                <span>By:</span>
+                                <span>${req.requestedByName || '-'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p style="color: var(--danger); font-weight: 500; text-align: center;">
+                        Are you sure you want to delete this purchase request?<br>
+                        <small style="color: var(--text-secondary);">This action cannot be undone.</small>
+                    </p>
+                </div>
+            `,
+            saveText: confirmText,
+            saveClass: 'btn-danger',
+            width: '500px',
+            onSave: () => this.deleteRequest(requestId)
+        });
+    },
+    
+    async deleteRequest(requestId) {
+        const req = this.data.find(r => r.id === requestId);
+        if (!req) return;
+        
+        try {
+            // Delete from Firebase
+            await DB.delete('purchaseRequests', requestId);
+            
+            Toast.success(`Request ${req.requestNumber} deleted successfully`);
+            Modal.close();
+            await this.load();
+            this.render();
+        } catch (error) {
+            console.error('Error deleting request:', error);
+            Toast.error('Failed to delete request');
         }
     }
 };

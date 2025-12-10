@@ -344,6 +344,10 @@ a {
     color: white;
 }
 
+.btn-danger:hover {
+    background: #C0392B;
+}
+
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
