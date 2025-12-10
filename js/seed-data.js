@@ -6,38 +6,104 @@
  */
 
 const SeedData = {
-    // Sample ingredients
-    ingredients: [
-        { name: 'Bread Flour (Champion)', category: 'flour', unit: 'kg', costPerUnit: 45, supplier: 'Supplier A' },
-        { name: 'Water', category: 'other', unit: 'L', costPerUnit: 0.50, supplier: 'Manila Water' },
-        { name: 'Instant Yeast', category: 'leavening', unit: 'kg', costPerUnit: 320, supplier: 'Supplier B' },
-        { name: 'White Sugar', category: 'sugar', unit: 'kg', costPerUnit: 58, supplier: 'Supplier A' },
-        { name: 'Butter', category: 'fat', unit: 'kg', costPerUnit: 380, supplier: 'Supplier C' },
-        { name: 'Salt', category: 'other', unit: 'kg', costPerUnit: 15, supplier: 'Supplier A' },
-        { name: 'Eggs', category: 'egg', unit: 'kg', costPerUnit: 160, supplier: 'Market' },
-        { name: 'Desiccated Coconut', category: 'filling', unit: 'kg', costPerUnit: 85, supplier: 'Supplier D' },
-        { name: 'Brown Sugar', category: 'sugar', unit: 'kg', costPerUnit: 62, supplier: 'Supplier A' },
-        { name: 'Condensed Milk', category: 'dairy', unit: 'kg', costPerUnit: 150, supplier: 'Supplier E' },
-        { name: 'Cinnamon Powder', category: 'flavoring', unit: 'kg', costPerUnit: 450, supplier: 'Supplier E' },
-        { name: 'Milk Powder', category: 'dairy', unit: 'kg', costPerUnit: 280, supplier: 'Supplier B' },
-        { name: 'Cheese (Eden)', category: 'filling', unit: 'kg', costPerUnit: 420, supplier: 'Supplier C' }
+    // Sample suppliers
+    suppliers: [
+        { 
+            companyName: 'Champion Flour Mills', 
+            contactName: 'Sales Team',
+            mobile: '09171234567',
+            email: 'sales@champion.com.ph',
+            facebook: 'https://facebook.com/championflour',
+            address: 'Makati City',
+            notes: 'Delivers every Monday and Thursday'
+        },
+        { 
+            companyName: 'Metro Market Supplies', 
+            contactName: 'Maria Santos',
+            mobile: '09181234567',
+            facebook: 'https://facebook.com/metromarket',
+            address: 'Taytay, Rizal',
+            notes: 'Good for dairy and eggs. Cash on delivery.'
+        },
+        { 
+            companyName: 'Baking Essentials PH', 
+            contactName: 'John Cruz',
+            mobile: '09191234567',
+            email: 'orders@bakingessentials.ph',
+            website: 'https://bakingessentials.ph',
+            address: 'Pasig City',
+            notes: 'Online orders, delivers via Lalamove'
+        }
     ],
+    
+    // Sample ingredients with purchase price and package size
+    ingredients: [
+        { name: 'Bread Flour (Champion)', category: 'flour', purchasePrice: 45, packageSize: 1000, supplierIndex: 0 },
+        { name: 'Water', category: 'other', purchasePrice: 25, packageSize: 5000, supplierIndex: 1 },
+        { name: 'Instant Yeast (Saf)', category: 'leavening', purchasePrice: 80, packageSize: 125, supplierIndex: 2 },
+        { name: 'White Sugar', category: 'sugar', purchasePrice: 58, packageSize: 1000, supplierIndex: 1 },
+        { name: 'Butter (Anchor)', category: 'fat', purchasePrice: 95, packageSize: 227, supplierIndex: 1 },
+        { name: 'Salt (Iodized)', category: 'other', purchasePrice: 15, packageSize: 1000, supplierIndex: 1 },
+        { name: 'Eggs (Large)', category: 'egg', purchasePrice: 8, packageSize: 60, supplierIndex: 1 },
+        { name: 'Desiccated Coconut', category: 'filling', purchasePrice: 85, packageSize: 1000, supplierIndex: 2 },
+        { name: 'Brown Sugar', category: 'sugar', purchasePrice: 62, packageSize: 1000, supplierIndex: 1 },
+        { name: 'Condensed Milk (Alaska)', category: 'dairy', purchasePrice: 45, packageSize: 300, supplierIndex: 1 },
+        { name: 'Cinnamon Powder', category: 'flavoring', purchasePrice: 45, packageSize: 50, supplierIndex: 2 },
+        { name: 'Milk Powder (Anchor)', category: 'dairy', purchasePrice: 140, packageSize: 500, supplierIndex: 2 },
+        { name: 'Cheese (Eden)', category: 'filling', purchasePrice: 105, packageSize: 165, supplierIndex: 1 }
+    ],
+    
+    supplierIds: [], // Will be populated after seeding suppliers
+    
+    async seedSuppliers() {
+        console.log('Seeding suppliers...');
+        this.supplierIds = [];
+        
+        for (const supplier of this.suppliers) {
+            try {
+                const id = await DB.add('suppliers', supplier);
+                this.supplierIds.push(id);
+                console.log(`  Added: ${supplier.companyName}`);
+            } catch (e) {
+                console.error(`  Failed: ${supplier.companyName}`, e);
+            }
+        }
+        
+        await Suppliers.load();
+        Suppliers.render();
+        console.log('Suppliers seeded!');
+    },
     
     async seedIngredients() {
         console.log('Seeding ingredients...');
+        
+        if (this.supplierIds.length === 0) {
+            // Get supplier IDs from loaded data
+            this.supplierIds = Suppliers.data.map(s => s.id);
+        }
+        
         for (const ing of this.ingredients) {
             try {
-                await DB.add('ingredients', ing);
-                console.log(`  Added: ${ing.name}`);
+                const data = {
+                    name: ing.name,
+                    category: ing.category,
+                    purchasePrice: ing.purchasePrice,
+                    packageSize: ing.packageSize,
+                    costPerGram: ing.purchasePrice / ing.packageSize,
+                    supplierId: this.supplierIds[ing.supplierIndex] || this.supplierIds[0]
+                };
+                await DB.add('ingredients', data);
+                console.log(`  Added: ${ing.name} (₱${data.costPerGram.toFixed(4)}/g)`);
             } catch (e) {
                 console.error(`  Failed: ${ing.name}`, e);
             }
         }
+        
         await Ingredients.load();
         Ingredients.render();
         console.log('Ingredients seeded!');
     },
-    
+
     async seedDoughRecipes() {
         console.log('Seeding dough recipes...');
         
@@ -46,9 +112,9 @@ const SeedData = {
         const water = Ingredients.data.find(i => i.name === 'Water')?.id;
         const yeast = Ingredients.data.find(i => i.name.includes('Yeast'))?.id;
         const sugar = Ingredients.data.find(i => i.name === 'White Sugar')?.id;
-        const butter = Ingredients.data.find(i => i.name === 'Butter')?.id;
-        const salt = Ingredients.data.find(i => i.name === 'Salt')?.id;
-        const eggs = Ingredients.data.find(i => i.name === 'Eggs')?.id;
+        const butter = Ingredients.data.find(i => i.name.includes('Butter'))?.id;
+        const salt = Ingredients.data.find(i => i.name.includes('Salt'))?.id;
+        const eggs = Ingredients.data.find(i => i.name.includes('Eggs'))?.id;
         
         if (!flour || !water || !yeast) {
             console.error('Required ingredients not found. Please seed ingredients first.');
@@ -84,7 +150,6 @@ const SeedData = {
             notes: 'Standard sweet dough for pandecoco, ensaymada, cinnamon rolls'
         };
         
-        // Calculate costs
         Doughs.calculateCosts(sweetDough);
         
         try {
@@ -104,9 +169,9 @@ const SeedData = {
         
         const coconut = Ingredients.data.find(i => i.name.includes('Coconut'))?.id;
         const brownSugar = Ingredients.data.find(i => i.name === 'Brown Sugar')?.id;
-        const butter = Ingredients.data.find(i => i.name === 'Butter')?.id;
+        const butter = Ingredients.data.find(i => i.name.includes('Butter'))?.id;
         const condensedMilk = Ingredients.data.find(i => i.name.includes('Condensed'))?.id;
-        const salt = Ingredients.data.find(i => i.name === 'Salt')?.id;
+        const salt = Ingredients.data.find(i => i.name.includes('Salt'))?.id;
         
         const coconutFilling = {
             name: 'Coconut Filling (Pandecoco)',
@@ -144,14 +209,14 @@ const SeedData = {
         Fillings.render();
         console.log('Fillings seeded!');
     },
-
+    
     async seedToppings() {
         console.log('Seeding toppings...');
         
-        const butter = Ingredients.data.find(i => i.name === 'Butter')?.id;
+        const butter = Ingredients.data.find(i => i.name.includes('Butter'))?.id;
         const sugar = Ingredients.data.find(i => i.name === 'White Sugar')?.id;
         const milkPowder = Ingredients.data.find(i => i.name.includes('Milk Powder'))?.id;
-        const salt = Ingredients.data.find(i => i.name === 'Salt')?.id;
+        const salt = Ingredients.data.find(i => i.name.includes('Salt'))?.id;
         
         const ensaymadaIcing = {
             name: 'Ensaymada Butter Icing',
@@ -188,7 +253,7 @@ const SeedData = {
         Toppings.render();
         console.log('Toppings seeded!');
     },
-    
+
     async seedProducts() {
         console.log('Seeding products...');
         
@@ -285,10 +350,15 @@ const SeedData = {
         console.log('=== Starting full seed ===');
         console.log('');
         
+        // Seed suppliers first
+        await this.seedSuppliers();
+        console.log('');
+        
+        await new Promise(r => setTimeout(r, 1000));
+        
         await this.seedIngredients();
         console.log('');
         
-        // Wait a moment for data to sync
         await new Promise(r => setTimeout(r, 1000));
         
         await this.seedDoughRecipes();
@@ -312,7 +382,8 @@ const SeedData = {
         console.log('=== Seed complete! ===');
         console.log('');
         console.log('Sample data added:');
-        console.log('- 13 ingredients');
+        console.log('- 3 suppliers');
+        console.log('- 13 ingredients (with cost per gram)');
         console.log('- 1 dough recipe (Sweet Dough)');
         console.log('- 1 filling (Coconut)');
         console.log('- 1 topping (Ensaymada Icing)');
@@ -328,7 +399,7 @@ const SeedData = {
         
         console.log('Clearing all data...');
         
-        const collections = ['ingredients', 'doughRecipes', 'fillingRecipes', 'toppingRecipes', 'products', 'productionRuns'];
+        const collections = ['suppliers', 'ingredients', 'doughRecipes', 'fillingRecipes', 'toppingRecipes', 'products', 'productionRuns'];
         
         for (const collection of collections) {
             try {

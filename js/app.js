@@ -41,7 +41,10 @@ const App = {
     
     async loadData() {
         try {
-            // Load all data in parallel
+            // Load suppliers first (ingredients depend on it)
+            await Suppliers.init();
+            
+            // Load all other data in parallel
             await Promise.all([
                 Ingredients.init(),
                 Doughs.init(),
@@ -109,7 +112,8 @@ const App = {
             dashboard: { title: 'Dashboard', subtitle: 'Production overview' },
             production: { title: 'New Production', subtitle: 'Plan your production run' },
             timers: { title: 'Active Timers', subtitle: 'Monitor proofing and baking' },
-            ingredients: { title: 'Ingredients', subtitle: 'Manage master ingredients' },
+            suppliers: { title: 'Suppliers', subtitle: 'Manage your ingredient suppliers' },
+            ingredients: { title: 'Ingredients', subtitle: 'Master ingredients with costs (all in grams)' },
             doughs: { title: 'Dough Recipes', subtitle: 'Manage dough recipes' },
             toppings: { title: 'Toppings', subtitle: 'Manage topping recipes' },
             fillings: { title: 'Fillings', subtitle: 'Manage filling recipes' },
@@ -128,6 +132,9 @@ const App = {
         switch (viewName) {
             case 'dashboard':
                 this.refreshDashboard();
+                break;
+            case 'suppliers':
+                Suppliers.render();
                 break;
             case 'ingredients':
                 Ingredients.render();
