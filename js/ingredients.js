@@ -47,8 +47,9 @@ const Ingredients = {
                 <tr data-id="${ing.id}">
                     <td><strong>${ing.name}</strong></td>
                     <td>${this.formatCategory(ing.category)}</td>
-                    <td>${Utils.formatCurrency(ing.purchasePrice)} / ${ing.packageSize}g</td>
-                    <td><strong>${Utils.formatCurrency(ing.costPerGram)}/g</strong></td>
+                    <td>${Utils.formatCurrency(ing.purchasePrice)}</td>
+                    <td>${ing.packageSize}g</td>
+                    <td><strong>${Utils.formatCurrency(ing.costPerGram)}</strong></td>
                     <td>${supplier?.companyName || '-'}</td>
                     <td>${Utils.formatDate(ing.updatedAt)}</td>
                     <td>
