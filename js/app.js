@@ -36,13 +36,17 @@ const App = {
             // Load suppliers first (ingredients depend on it)
             await Suppliers.init();
             
+            // Load ingredient prices
+            await IngredientPrices.init();
+            
             // Load all other data in parallel
             await Promise.all([
                 Ingredients.init(),
                 Doughs.init(),
                 Toppings.init(),
                 Fillings.init(),
-                Products.init()
+                Products.init(),
+                PurchaseRequests.init()
             ]);
             
             // Load users if admin
@@ -121,12 +125,13 @@ const App = {
             dashboard: { title: 'Dashboard', subtitle: 'Production overview' },
             production: { title: 'New Production', subtitle: 'Plan your production run' },
             timers: { title: 'Active Timers', subtitle: 'Monitor proofing and baking' },
-            suppliers: { title: 'Suppliers', subtitle: 'Manage your ingredient suppliers' },
-            ingredients: { title: 'Ingredients', subtitle: 'Master ingredients with costs (all in grams)' },
+            suppliers: { title: 'Suppliers', subtitle: 'Manage suppliers with location & delivery' },
+            ingredients: { title: 'Ingredients', subtitle: 'Master ingredients with multiple suppliers' },
             doughs: { title: 'Dough Recipes', subtitle: 'Manage dough recipes' },
             toppings: { title: 'Toppings', subtitle: 'Manage topping recipes' },
             fillings: { title: 'Fillings', subtitle: 'Manage filling recipes' },
             products: { title: 'Products', subtitle: 'Manage product assembly' },
+            purchaseRequests: { title: 'Purchase Requests', subtitle: 'Create and manage purchase requests' },
             costs: { title: 'Cost Analysis', subtitle: 'Analyze production costs' },
             history: { title: 'Production History', subtitle: 'View past production runs' },
             users: { title: 'User Management', subtitle: 'Manage users and roles (Admin only)' }

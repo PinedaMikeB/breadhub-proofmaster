@@ -14,6 +14,7 @@ const Auth = {
     roles: {
         admin: { name: 'Admin', level: 100, description: 'Full access to everything' },
         manager: { name: 'Manager', level: 50, description: 'Manage recipes, products, view costs' },
+        purchaser: { name: 'Purchaser', level: 35, description: 'Handle purchase requests, manage suppliers' },
         baker: { name: 'Baker', level: 20, description: 'Production runs, view recipes only' }
     },
     
