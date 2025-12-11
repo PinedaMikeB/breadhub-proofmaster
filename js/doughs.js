@@ -149,7 +149,7 @@ const Doughs = {
                 </div>
                 
                 <h4 style="margin: 16px 0 8px;">Ingredients</h4>
-                <div id="ingredientsList">
+                <div id="ingredientsList" style="min-height: 20px; border: 1px dashed #ccc; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
                     ${ingredients.map((ing, idx) => this.getIngredientRow(ing, idx)).join('')}
                 </div>
                 <button type="button" class="btn btn-secondary" onclick="Doughs.addIngredientRow()">
@@ -256,6 +256,8 @@ const Doughs = {
         console.log('addIngredientRow called');
         
         const list = document.getElementById('ingredientsList');
+        console.log('ingredientsList element:', list);
+        
         if (!list) {
             console.error('ingredientsList not found');
             alert('Error: ingredientsList not found');
@@ -276,9 +278,16 @@ const Doughs = {
         console.log('Creating row with index:', newIdx);
         
         const newRow = this.getIngredientRow({}, newIdx);
-        list.insertAdjacentHTML('beforeend', newRow);
+        console.log('New row HTML length:', newRow.length);
         
-        console.log('Row added successfully');
+        // Try direct DOM manipulation
+        const temp = document.createElement('div');
+        temp.innerHTML = newRow;
+        const rowElement = temp.firstElementChild;
+        list.appendChild(rowElement);
+        
+        console.log('Row added. List innerHTML length:', list.innerHTML.length);
+        console.log('List children count:', list.children.length);
     },
     
     getViewHTML(dough) {
