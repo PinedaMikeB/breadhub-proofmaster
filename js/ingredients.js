@@ -53,6 +53,11 @@ const Ingredients = {
             const supplierCount = IngredientPrices.getByIngredient(ing.id).length;
             const supplier = costPrice ? Suppliers.getById(costPrice.supplierId) : null;
             
+            // Format stock display
+            const stock = ing.currentStock || 0;
+            const stockDisplay = this.formatStock(stock);
+            const stockColor = stock === 0 ? 'var(--danger)' : stock < 5000 ? 'var(--warning)' : 'var(--success)';
+            
             return `
                 <tr data-id="${ing.id}">
                     <td><strong>${ing.name}</strong></td>
@@ -65,6 +70,10 @@ const Ingredients = {
                             ${costPrice ? Utils.formatCurrency(costPrice.costPerGram) + '/g' : '-'}
                         </strong>
                         <br><small style="color: var(--text-secondary);">${this.costingMethods[ing.costingMethod || 'lastPurchase']}</small>
+                    </td>
+                    <td>
+                        <strong style="color: ${stockColor};">${stockDisplay}</strong>
+                        ${stock === 0 ? '<br><small style="color: var(--danger);">Out of stock</small>' : ''}
                     </td>
                     <td>${supplier?.companyName || '-'}</td>
                     <td>
@@ -81,6 +90,14 @@ const Ingredients = {
                 </tr>
             `;
         }).join('');
+    },
+    
+    // Format stock for display (convert grams to kg if >= 1000)
+    formatStock(grams) {
+        if (grams >= 1000) {
+            return (grams / 1000).toFixed(2) + ' kg';
+        }
+        return grams.toFixed(0) + ' g';
     },
     
     formatCategory(cat) {

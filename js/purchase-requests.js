@@ -11,8 +11,9 @@ const PurchaseRequests = {
         draft: { label: 'Draft', color: '#95A5A6', icon: '📝' },
         pending: { label: 'Pending Review', color: '#F39C12', icon: '🟡' },
         processed: { label: 'Processed', color: '#9B59B6', icon: '✔️' },
-        approved: { label: 'Approved', color: '#3498DB', icon: '✓' },
-        purchased: { label: 'Purchased', color: '#27AE60', icon: '✅' },
+        approved: { label: 'Approved', color: '#3498DB', icon: '📋' },
+        ordered: { label: 'Ordered', color: '#9B59B6', icon: '🚚' },
+        received: { label: 'Received', color: '#27AE60', icon: '✅' },
         cancelled: { label: 'Cancelled', color: '#E74C3C', icon: '❌' }
     },
     
@@ -36,6 +37,7 @@ const PurchaseRequests = {
         
         const pendingRequests = this.data.filter(r => r.status === 'pending');
         const approvedRequests = this.data.filter(r => r.status === 'approved');
+        const orderedRequests = this.data.filter(r => r.status === 'ordered');
         
         container.innerHTML = `
             <!-- Action Buttons -->
@@ -53,11 +55,19 @@ const PurchaseRequests = {
                 </div>
             ` : ''}
             
-            <!-- Approved (Ready to Purchase) - These are now supplier-specific POs -->
+            <!-- Approved (Ready to Order) - These are now supplier-specific POs -->
             ${approvedRequests.length > 0 ? `
-                <h3 style="margin-bottom: 12px;">✓ Ready to Purchase (${approvedRequests.length} PO${approvedRequests.length > 1 ? 's' : ''})</h3>
+                <h3 style="margin-bottom: 12px;">📋 Ready to Order (${approvedRequests.length} PO${approvedRequests.length > 1 ? 's' : ''})</h3>
                 <div class="cards-grid" style="margin-bottom: 24px;">
                     ${approvedRequests.map(req => this.renderPurchaseOrderCard(req)).join('')}
+                </div>
+            ` : ''}
+            
+            <!-- Ordered (Waiting for Delivery) -->
+            ${orderedRequests.length > 0 ? `
+                <h3 style="margin-bottom: 12px;">🚚 Ordered - Awaiting Delivery (${orderedRequests.length})</h3>
+                <div class="cards-grid" style="margin-bottom: 24px;">
+                    ${orderedRequests.map(req => this.renderPurchaseOrderCard(req)).join('')}
                 </div>
             ` : ''}
             
@@ -96,7 +106,10 @@ const PurchaseRequests = {
                                         <button class="btn btn-secondary btn-sm" onclick="PurchaseRequests.edit('${req.id}')">Edit</button>
                                     ` : ''}
                                     ${req.status === 'approved' ? `
-                                        <button class="btn btn-primary btn-sm" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">Purchase</button>
+                                        <button class="btn btn-primary btn-sm" onclick="PurchaseRequests.markAsOrdered('${req.id}')">Mark Ordered</button>
+                                    ` : ''}
+                                    ${req.status === 'ordered' ? `
+                                        <button class="btn btn-primary btn-sm" onclick="PurchaseRequests.markAsReceived('${req.id}')">Mark Received</button>
                                     ` : ''}
                                     <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                                 </td>
@@ -210,32 +223,86 @@ const PurchaseRequests = {
                     ` : ''}
                 </div>
                 <div class="recipe-card-actions">
-                    <button class="btn btn-primary" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">View PO</button>
-                    <button class="btn btn-secondary" onclick="PurchaseRequests.markAsPurchased('${req.id}')">✅ Mark Purchased</button>
+                    <button class="btn btn-secondary" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">View PO</button>
+                    ${req.status === 'approved' ? `
+                        <button class="btn btn-primary" onclick="PurchaseRequests.markAsOrdered('${req.id}')">📦 Mark Ordered</button>
+                    ` : ''}
+                    ${req.status === 'ordered' ? `
+                        <button class="btn btn-primary" style="background: var(--success);" onclick="PurchaseRequests.markAsReceived('${req.id}')">✅ Mark Received</button>
+                    ` : ''}
                     <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
                 </div>
             </div>
         `;
     },
 
-    // Mark PO as purchased
-    async markAsPurchased(requestId) {
-        if (!confirm('Mark this order as purchased?')) return;
+    // Mark PO as ordered (paid/sent to supplier)
+    async markAsOrdered(requestId) {
+        if (!confirm('Mark this PO as ordered? (You have paid and arranged pickup/delivery)')) return;
         
         try {
             await DB.update('purchaseRequests', requestId, {
-                status: 'purchased',
-                purchasedAt: new Date().toISOString(),
-                purchasedBy: Auth.currentUser?.uid,
-                purchasedByName: Auth.userProfile?.displayName || 'Unknown'
+                status: 'ordered',
+                orderedAt: new Date().toISOString(),
+                orderedBy: Auth.currentUser?.uid,
+                orderedByName: Auth.userProfile?.displayName || 'Unknown'
             });
             
-            Toast.success('Order marked as purchased!');
+            Toast.success('PO marked as ordered! Waiting for delivery.');
             await this.load();
             this.render();
         } catch (error) {
-            console.error('Error marking as purchased:', error);
+            console.error('Error marking as ordered:', error);
             Toast.error('Failed to update');
+        }
+    },
+
+    // Mark PO as received and update inventory
+    async markAsReceived(requestId) {
+        const req = this.data.find(r => r.id === requestId);
+        if (!req) return;
+        
+        // Show confirmation with items list
+        const itemsList = req.items.map(item => 
+            `• ${item.ingredientName}: ${item.packagesNeeded} × ${item.packageSize}g = ${(item.packagesNeeded * item.packageSize / 1000).toFixed(2)}kg`
+        ).join('\n');
+        
+        if (!confirm(`Mark as received and add to inventory?\n\nItems:\n${itemsList}\n\nThis will update stock levels.`)) return;
+        
+        try {
+            // Update inventory for each item
+            for (const item of req.items) {
+                const ingredient = Ingredients.data.find(i => i.id === item.ingredientId);
+                if (ingredient) {
+                    const addedStock = item.packagesNeeded * item.packageSize; // in grams
+                    const newStock = (ingredient.currentStock || 0) + addedStock;
+                    
+                    await DB.update('ingredients', item.ingredientId, {
+                        currentStock: newStock,
+                        lastRestockedAt: new Date().toISOString()
+                    });
+                    
+                    // Update local data
+                    ingredient.currentStock = newStock;
+                }
+            }
+            
+            // Update PO status
+            await DB.update('purchaseRequests', requestId, {
+                status: 'received',
+                receivedAt: new Date().toISOString(),
+                receivedBy: Auth.currentUser?.uid,
+                receivedByName: Auth.userProfile?.displayName || 'Unknown'
+            });
+            
+            Toast.success('Items received! Inventory updated.');
+            await this.load();
+            await Ingredients.load(); // Refresh ingredients data
+            this.render();
+            Ingredients.render(); // Refresh ingredients table if visible
+        } catch (error) {
+            console.error('Error marking as received:', error);
+            Toast.error('Failed to update inventory');
         }
     },
 
@@ -268,6 +335,9 @@ const PurchaseRequests = {
                                         ? `₱${bestPrice.purchasePrice} / ${bestPrice.packageSize >= 1000 ? (bestPrice.packageSize/1000) + 'kg' : bestPrice.packageSize + 'g'}`
                                         : 'No supplier';
                                     const supplierName = bestPrice ? Suppliers.getById(bestPrice.supplierId)?.companyName : '';
+                                    const stock = ing.currentStock || 0;
+                                    const stockDisplay = Ingredients.formatStock(stock);
+                                    const stockColor = stock === 0 ? 'var(--danger)' : stock < 5000 ? 'var(--warning)' : 'var(--text-secondary)';
                                     
                                     return `
                                     <tr style="border-bottom: 1px solid var(--bg-input);">
@@ -279,6 +349,7 @@ const PurchaseRequests = {
                                             <br><small style="color: var(--text-secondary);">${Ingredients.formatCategory(ing.category)}</small>
                                             <br><small style="color: ${bestPrice ? 'var(--primary)' : 'var(--danger)'}; font-weight: 500;">${priceInfo}</small>
                                             ${supplierName ? `<small style="color: var(--text-secondary);"> • ${supplierName}</small>` : ''}
+                                            <br><small style="color: ${stockColor};">📦 Stock: <strong>${stockDisplay}</strong></small>
                                         </td>
                                         <td style="padding: 12px; text-align: right;">
                                             <input type="number" name="qty_${ing.id}" class="form-input" 
