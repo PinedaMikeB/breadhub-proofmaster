@@ -262,28 +262,37 @@ const PurchaseRequests = {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${Ingredients.data.map(ing => `
+                                ${Ingredients.data.map(ing => {
+                                    const bestPrice = IngredientPrices.getCheapest(ing.id, true);
+                                    const priceInfo = bestPrice 
+                                        ? `₱${bestPrice.purchasePrice} / ${bestPrice.packageSize >= 1000 ? (bestPrice.packageSize/1000) + 'kg' : bestPrice.packageSize + 'g'}`
+                                        : 'No supplier';
+                                    const supplierName = bestPrice ? Suppliers.getById(bestPrice.supplierId)?.companyName : '';
+                                    
+                                    return `
                                     <tr style="border-bottom: 1px solid var(--bg-input);">
                                         <td style="padding: 12px;">
-                                            <input type="checkbox" name="ingredient_${ing.id}" data-ingredient-id="${ing.id}">
+                                            <input type="checkbox" name="ingredient_${ing.id}" data-ingredient-id="${ing.id}" ${!bestPrice ? 'disabled' : ''}>
                                         </td>
                                         <td style="padding: 12px;">
                                             <strong>${ing.name}</strong>
                                             <br><small style="color: var(--text-secondary);">${Ingredients.formatCategory(ing.category)}</small>
+                                            <br><small style="color: ${bestPrice ? 'var(--primary)' : 'var(--danger)'}; font-weight: 500;">${priceInfo}</small>
+                                            ${supplierName ? `<small style="color: var(--text-secondary);"> • ${supplierName}</small>` : ''}
                                         </td>
                                         <td style="padding: 12px; text-align: right;">
                                             <input type="number" name="qty_${ing.id}" class="form-input" 
-                                                   style="width: 100px; text-align: right;" min="0" step="100"
-                                                   placeholder="0">
+                                                   style="width: 100px; text-align: right;" min="0" step="0.1"
+                                                   placeholder="0" ${!bestPrice ? 'disabled' : ''}>
                                         </td>
                                         <td style="padding: 12px; text-align: center;">
-                                            <select name="unit_${ing.id}" class="form-select" style="width: 80px;">
+                                            <select name="unit_${ing.id}" class="form-select" style="width: 80px;" ${!bestPrice ? 'disabled' : ''}>
                                                 <option value="g">g</option>
                                                 <option value="kg" selected>kg</option>
                                             </select>
                                         </td>
                                     </tr>
-                                `).join('')}
+                                `}).join('')}
                             </tbody>
                         </table>
                     </div>
