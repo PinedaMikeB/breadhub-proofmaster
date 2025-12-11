@@ -216,42 +216,24 @@ const Doughs = {
     },
     
     getIngredientRow(ing = {}, idx = 0) {
-        // Build ingredient options with category grouping
-        const categories = {};
-        Ingredients.data.forEach(i => {
-            const cat = i.category || 'other';
-            if (!categories[cat]) categories[cat] = [];
-            const stock = i.currentStock || 0;
-            const stockDisplay = stock >= 1000 ? (stock/1000).toFixed(1) + 'kg' : stock + 'g';
-            categories[cat].push({
-                id: i.id,
-                name: i.name,
-                stock: stockDisplay,
-                selected: ing.ingredientId === i.id
-            });
-        });
-        
-        // Generate optgroups
-        let optionsHTML = '<option value="">Select ingredient...</option>';
-        const categoryNames = {
-            flour: '🌾 Flour', sugar: '🍬 Sugar', fat: '🧈 Fats & Oils', dairy: '🥛 Dairy',
-            leavening: '🫧 Leavening', filling: '🥜 Fillings', topping: '🍫 Toppings',
-            flavoring: '🌿 Flavoring', other: '📦 Other'
-        };
-        
-        Object.keys(categories).sort().forEach(cat => {
-            const label = categoryNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
-            optionsHTML += `<optgroup label="${label}">`;
-            categories[cat].forEach(item => {
-                optionsHTML += `<option value="${item.id}" ${item.selected ? 'selected' : ''}>${item.name} (${item.stock})</option>`;
-            });
-            optionsHTML += '</optgroup>';
-        });
+        // Build ingredient options - simple list sorted alphabetically
+        const ingredientOptions = Ingredients.data
+            .slice() // copy array
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(i => {
+                const stock = i.currentStock || 0;
+                const stockDisplay = stock >= 1000 ? (stock/1000).toFixed(1) + 'kg' : stock + 'g';
+                const category = Ingredients.formatCategory(i.category);
+                const selected = ing.ingredientId === i.id ? 'selected' : '';
+                return `<option value="${i.id}" ${selected}>${i.name} (${stockDisplay}) - ${category}</option>`;
+            })
+            .join('');
         
         return `
             <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
                 <select name="ing_${idx}_id" class="form-select" style="flex: 2;">
-                    ${optionsHTML}
+                    <option value="">Select ingredient...</option>
+                    ${ingredientOptions}
                 </select>
                 <input type="number" name="ing_${idx}_amount" class="form-input" 
                        value="${ing.amount || ''}" placeholder="Qty" style="width: 80px;" step="0.1">
@@ -269,21 +251,30 @@ const Doughs = {
     
     addIngredientRow() {
         const list = document.getElementById('ingredientsList');
-        if (!list) return;
+        if (!list) {
+            console.error('ingredientsList not found');
+            return;
+        }
+        
+        if (Ingredients.data.length === 0) {
+            Toast.error('No ingredients loaded');
+            return;
+        }
         
         // Find next unique index
         const existingRows = list.querySelectorAll('.ingredient-row');
         let maxIdx = -1;
         existingRows.forEach(row => {
             const select = row.querySelector('select');
-            if (select) {
+            if (select && select.name) {
                 const match = select.name.match(/ing_(\d+)_id/);
                 if (match) maxIdx = Math.max(maxIdx, parseInt(match[1]));
             }
         });
         const newIdx = maxIdx + 1;
         
-        list.insertAdjacentHTML('beforeend', this.getIngredientRow({}, newIdx));
+        const newRow = this.getIngredientRow({}, newIdx);
+        list.insertAdjacentHTML('beforeend', newRow);
     },
     
     getViewHTML(dough) {
