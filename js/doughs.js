@@ -217,23 +217,26 @@ const Doughs = {
     
     getIngredientRow(ing = {}, idx = 0) {
         // Build ingredient options - simple list sorted alphabetically
-        const ingredientOptions = Ingredients.data
-            .slice() // copy array
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(i => {
+        let optionsHTML = '<option value="">Select ingredient...</option>';
+        
+        try {
+            const sortedIngredients = Ingredients.data.slice().sort((a, b) => a.name.localeCompare(b.name));
+            
+            sortedIngredients.forEach(i => {
                 const stock = i.currentStock || 0;
                 const stockDisplay = stock >= 1000 ? (stock/1000).toFixed(1) + 'kg' : stock + 'g';
-                const category = Ingredients.formatCategory(i.category);
+                const cat = i.category ? i.category.charAt(0).toUpperCase() + i.category.slice(1) : '';
                 const selected = ing.ingredientId === i.id ? 'selected' : '';
-                return `<option value="${i.id}" ${selected}>${i.name} (${stockDisplay}) - ${category}</option>`;
-            })
-            .join('');
+                optionsHTML += `<option value="${i.id}" ${selected}>${i.name} (${stockDisplay})${cat ? ' - ' + cat : ''}</option>`;
+            });
+        } catch (e) {
+            console.error('Error building ingredient options:', e);
+        }
         
         return `
             <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
                 <select name="ing_${idx}_id" class="form-select" style="flex: 2;">
-                    <option value="">Select ingredient...</option>
-                    ${ingredientOptions}
+                    ${optionsHTML}
                 </select>
                 <input type="number" name="ing_${idx}_amount" class="form-input" 
                        value="${ing.amount || ''}" placeholder="Qty" style="width: 80px;" step="0.1">
@@ -250,31 +253,32 @@ const Doughs = {
 
     
     addIngredientRow() {
+        console.log('addIngredientRow called');
+        
         const list = document.getElementById('ingredientsList');
         if (!list) {
             console.error('ingredientsList not found');
+            alert('Error: ingredientsList not found');
             return;
         }
         
-        if (Ingredients.data.length === 0) {
+        console.log('Ingredients.data length:', Ingredients.data.length);
+        
+        if (!Ingredients.data || Ingredients.data.length === 0) {
             Toast.error('No ingredients loaded');
             return;
         }
         
         // Find next unique index
         const existingRows = list.querySelectorAll('.ingredient-row');
-        let maxIdx = -1;
-        existingRows.forEach(row => {
-            const select = row.querySelector('select');
-            if (select && select.name) {
-                const match = select.name.match(/ing_(\d+)_id/);
-                if (match) maxIdx = Math.max(maxIdx, parseInt(match[1]));
-            }
-        });
-        const newIdx = maxIdx + 1;
+        const newIdx = existingRows.length;
+        
+        console.log('Creating row with index:', newIdx);
         
         const newRow = this.getIngredientRow({}, newIdx);
         list.insertAdjacentHTML('beforeend', newRow);
+        
+        console.log('Row added successfully');
     },
     
     getViewHTML(dough) {
