@@ -78,6 +78,12 @@ const Doughs = {
 
     
     showAddModal() {
+        // Ensure ingredients are loaded
+        if (Ingredients.data.length === 0) {
+            Toast.error('Please wait for ingredients to load');
+            return;
+        }
+        
         Modal.open({
             title: 'New Dough Recipe',
             content: this.getFormHTML(),
@@ -85,12 +91,17 @@ const Doughs = {
             width: '700px',
             onSave: () => this.save()
         });
-        this.setupIngredientAdder();
     },
     
     async edit(id) {
         const dough = this.data.find(d => d.id === id);
         if (!dough) return;
+        
+        // Ensure ingredients are loaded
+        if (Ingredients.data.length === 0) {
+            Toast.error('Please wait for ingredients to load');
+            return;
+        }
         
         Modal.open({
             title: 'Edit Dough Recipe',
@@ -99,7 +110,6 @@ const Doughs = {
             width: '700px',
             onSave: () => this.save(id)
         });
-        this.setupIngredientAdder();
     },
     
     async view(id) {
@@ -206,88 +216,232 @@ const Doughs = {
     },
     
     getIngredientRow(ing = {}, idx = 0) {
-        const ingredientOptions = Ingredients.data.map(i => 
-            `<option value="${i.id}" ${ing.ingredientId === i.id ? 'selected' : ''}>${i.name}</option>`
-        ).join('');
+        // Build ingredient options with category grouping
+        const categories = {};
+        Ingredients.data.forEach(i => {
+            const cat = i.category || 'other';
+            if (!categories[cat]) categories[cat] = [];
+            const stock = i.currentStock || 0;
+            const stockDisplay = stock >= 1000 ? (stock/1000).toFixed(1) + 'kg' : stock + 'g';
+            categories[cat].push({
+                id: i.id,
+                name: i.name,
+                stock: stockDisplay,
+                selected: ing.ingredientId === i.id
+            });
+        });
+        
+        // Generate optgroups
+        let optionsHTML = '<option value="">Select ingredient...</option>';
+        const categoryNames = {
+            flour: '🌾 Flour', sugar: '🍬 Sugar', fat: '🧈 Fats & Oils', dairy: '🥛 Dairy',
+            leavening: '🫧 Leavening', filling: '🥜 Fillings', topping: '🍫 Toppings',
+            flavoring: '🌿 Flavoring', other: '📦 Other'
+        };
+        
+        Object.keys(categories).sort().forEach(cat => {
+            const label = categoryNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+            optionsHTML += `<optgroup label="${label}">`;
+            categories[cat].forEach(item => {
+                optionsHTML += `<option value="${item.id}" ${item.selected ? 'selected' : ''}>${item.name} (${item.stock})</option>`;
+            });
+            optionsHTML += '</optgroup>';
+        });
         
         return `
-            <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
                 <select name="ing_${idx}_id" class="form-select" style="flex: 2;">
-                    <option value="">Select ingredient...</option>
-                    ${ingredientOptions}
+                    ${optionsHTML}
                 </select>
                 <input type="number" name="ing_${idx}_amount" class="form-input" 
-                       value="${ing.amount || ''}" placeholder="Amount" style="flex: 1;">
-                <select name="ing_${idx}_unit" class="form-select" style="flex: 1;">
-                    <option value="g" ${ing.unit === 'g' ? 'selected' : ''}>g</option>
+                       value="${ing.amount || ''}" placeholder="Qty" style="width: 80px;" step="0.1">
+                <select name="ing_${idx}_unit" class="form-select" style="width: 70px;">
+                    <option value="g" ${ing.unit === 'g' || !ing.unit ? 'selected' : ''}>g</option>
+                    <option value="kg" ${ing.unit === 'kg' ? 'selected' : ''}>kg</option>
                     <option value="mL" ${ing.unit === 'mL' ? 'selected' : ''}>mL</option>
+                    <option value="pcs" ${ing.unit === 'pcs' ? 'selected' : ''}>pcs</option>
                 </select>
-                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">×</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="padding: 8px 12px;">✕</button>
             </div>
         `;
     },
 
     
-    setupIngredientAdder() {
-        // Nothing special needed - handled inline
-    },
-    
     addIngredientRow() {
         const list = document.getElementById('ingredientsList');
-        const idx = list.children.length;
-        list.insertAdjacentHTML('beforeend', this.getIngredientRow({}, idx));
+        if (!list) return;
+        
+        // Find next unique index
+        const existingRows = list.querySelectorAll('.ingredient-row');
+        let maxIdx = -1;
+        existingRows.forEach(row => {
+            const select = row.querySelector('select');
+            if (select) {
+                const match = select.name.match(/ing_(\d+)_id/);
+                if (match) maxIdx = Math.max(maxIdx, parseInt(match[1]));
+            }
+        });
+        const newIdx = maxIdx + 1;
+        
+        list.insertAdjacentHTML('beforeend', this.getIngredientRow({}, newIdx));
     },
     
     getViewHTML(dough) {
         const ingredients = dough.ingredients || [];
         
+        // Calculate total weight
+        let totalWeight = 0;
+        ingredients.forEach(ing => {
+            let amount = ing.amount || 0;
+            if (ing.unit === 'kg') amount *= 1000;
+            totalWeight += amount;
+        });
+        
         return `
             <div style="padding: 16px 0;">
-                <div class="recipe-stat">
-                    <span>Version:</span>
-                    <span>v${dough.version || '1.0'}</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <span class="badge" style="background: var(--primary); color: white; font-size: 14px;">
+                        Version ${dough.version || '1.0'}
+                    </span>
+                    <div>
+                        <button class="btn btn-secondary btn-sm" onclick="Modal.close(); Doughs.edit('${dough.id}')">
+                            ✏️ Edit
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="Doughs.saveAsNewVersion('${dough.id}')">
+                            📋 Save as New Version
+                        </button>
+                    </div>
                 </div>
+                
                 <div class="recipe-stat">
                     <span>Base Flour:</span>
-                    <span>${dough.baseFlour}g</span>
-                </div>
-                
-                <h4 style="margin: 16px 0 8px;">Ingredients per ${dough.baseFlour}g flour:</h4>
-                ${ingredients.map(ing => {
-                    const ingredient = Ingredients.getById(ing.ingredientId);
-                    return `
-                        <div class="recipe-stat">
-                            <span>${ingredient?.name || 'Unknown'}:</span>
-                            <span>${ing.amount}${ing.unit}</span>
-                        </div>
-                    `;
-                }).join('')}
-                
-                <h4 style="margin: 16px 0 8px;">Process:</h4>
-                <div class="recipe-stat">
-                    <span>Mix Duration:</span>
-                    <span>${dough.mixing?.duration || '-'} min</span>
+                    <span><strong>${dough.baseFlour}g</strong></span>
                 </div>
                 <div class="recipe-stat">
-                    <span>Target Dough Temp:</span>
-                    <span>${dough.mixing?.targetTemperature || '-'}°C</span>
+                    <span>Total Yield:</span>
+                    <span><strong>${totalWeight >= 1000 ? (totalWeight/1000).toFixed(2) + 'kg' : totalWeight + 'g'}</strong></span>
+                </div>
+                
+                <h4 style="margin: 20px 0 12px; border-bottom: 1px solid var(--bg-input); padding-bottom: 8px;">
+                    🧂 Ingredients (per ${dough.baseFlour}g flour)
+                </h4>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: var(--bg-input);">
+                            <th style="padding: 8px; text-align: left;">Ingredient</th>
+                            <th style="padding: 8px; text-align: right;">Amount</th>
+                            <th style="padding: 8px; text-align: right;">Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${ingredients.length > 0 ? ingredients.map(ing => {
+                            const ingredient = Ingredients.getById(ing.ingredientId);
+                            let amountG = ing.amount || 0;
+                            if (ing.unit === 'kg') amountG *= 1000;
+                            const costPerGram = ingredient ? Ingredients.getCostPerGram(ing.ingredientId) : 0;
+                            const cost = costPerGram * amountG;
+                            
+                            return `
+                                <tr style="border-bottom: 1px solid var(--bg-input);">
+                                    <td style="padding: 8px;">
+                                        ${ingredient?.name || 'Unknown'}
+                                        <br><small style="color: var(--text-secondary);">${Ingredients.formatCategory(ingredient?.category)}</small>
+                                    </td>
+                                    <td style="padding: 8px; text-align: right;">${ing.amount}${ing.unit}</td>
+                                    <td style="padding: 8px; text-align: right;">${Utils.formatCurrency(cost)}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="3" style="padding: 12px; text-align: center; color: var(--text-secondary);">No ingredients added</td></tr>'}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background: var(--bg-input); font-weight: bold;">
+                            <td style="padding: 8px;">Total</td>
+                            <td style="padding: 8px; text-align: right;">${totalWeight >= 1000 ? (totalWeight/1000).toFixed(2) + 'kg' : totalWeight + 'g'}</td>
+                            <td style="padding: 8px; text-align: right; color: var(--primary);">${Utils.formatCurrency(dough.totalCost || 0)}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                
+                <h4 style="margin: 20px 0 12px; border-bottom: 1px solid var(--bg-input); padding-bottom: 8px;">
+                    ⚙️ Process
+                </h4>
+                <div class="recipe-stat">
+                    <span>Mixing:</span>
+                    <span>${dough.mixing?.duration || '-'} min → Target ${dough.mixing?.targetTemperature || '-'}°C</span>
                 </div>
                 <div class="recipe-stat">
                     <span>First Proof:</span>
-                    <span>${dough.firstProof?.duration || '-'} min @ ${dough.firstProof?.temperature || '-'}°C</span>
+                    <span>${dough.firstProof?.duration || '-'} min @ ${dough.firstProof?.temperature || '-'}°C, ${dough.firstProof?.humidity || '-'}% humidity</span>
+                </div>
+                <div class="recipe-stat">
+                    <span>Proof Sensitivity:</span>
+                    <span>${dough.characteristics?.proofSensitivity || 'Medium'}</span>
+                </div>
+                <div class="recipe-stat">
+                    <span>Max Dough Age:</span>
+                    <span>${dough.characteristics?.maxDoughAge || '-'} min</span>
                 </div>
                 
-                <h4 style="margin: 16px 0 8px;">Cost:</h4>
+                <h4 style="margin: 20px 0 12px; border-bottom: 1px solid var(--bg-input); padding-bottom: 8px;">
+                    💰 Cost Analysis
+                </h4>
                 <div class="recipe-stat">
-                    <span>Per Batch:</span>
-                    <span>${Utils.formatCurrency(dough.totalCost || 0)}</span>
+                    <span>Cost per Batch:</span>
+                    <span><strong style="color: var(--primary);">${Utils.formatCurrency(dough.totalCost || 0)}</strong></span>
                 </div>
                 <div class="recipe-stat">
-                    <span>Per Gram:</span>
-                    <span>${Utils.formatCurrency(dough.costPerGram || 0)}</span>
+                    <span>Cost per Gram:</span>
+                    <span>${Utils.formatCurrency(dough.costPerGram || 0)}/g</span>
                 </div>
+                
+                ${dough.notes ? `
+                    <h4 style="margin: 20px 0 12px; border-bottom: 1px solid var(--bg-input); padding-bottom: 8px;">
+                        📝 Notes
+                    </h4>
+                    <p style="color: var(--text-secondary); white-space: pre-wrap;">${dough.notes}</p>
+                ` : ''}
             </div>
         `;
+    },
+    
+    // Save as new version (duplicate with incremented version)
+    async saveAsNewVersion(id) {
+        const dough = this.data.find(d => d.id === id);
+        if (!dough) return;
+        
+        // Parse current version and increment
+        const currentVersion = dough.version || '1.0';
+        const versionParts = currentVersion.split('.');
+        let major = parseInt(versionParts[0]) || 1;
+        let minor = parseInt(versionParts[1]) || 0;
+        minor++;
+        if (minor >= 10) {
+            major++;
+            minor = 0;
+        }
+        const newVersion = `${major}.${minor}`;
+        
+        // Create copy with new version
+        const newDough = {
+            ...dough,
+            version: newVersion,
+            previousVersionId: id,
+            createdAt: new Date().toISOString()
+        };
+        delete newDough.id; // Remove ID so a new one is created
+        
+        try {
+            const newId = await DB.add('doughRecipes', newDough);
+            Toast.success(`Created version ${newVersion}`);
+            Modal.close();
+            await this.load();
+            this.render();
+            // Open the new version for editing
+            this.edit(newId);
+        } catch (error) {
+            console.error('Error creating new version:', error);
+            Toast.error('Failed to create new version');
+        }
     },
 
     
@@ -367,9 +521,13 @@ const Doughs = {
         for (const ing of data.ingredients) {
             const ingredient = Ingredients.getById(ing.ingredientId);
             if (ingredient) {
+                // Convert to grams for calculation
+                let amountInGrams = ing.amount || 0;
+                if (ing.unit === 'kg') amountInGrams *= 1000;
+                
                 const costPerGram = Ingredients.getCostPerGram(ing.ingredientId);
-                totalCost += costPerGram * ing.amount;
-                totalYield += ing.amount;
+                totalCost += costPerGram * amountInGrams;
+                totalYield += amountInGrams;
             }
         }
         
