@@ -149,7 +149,7 @@ const Doughs = {
                 </div>
                 
                 <h4 style="margin: 16px 0 8px;">Ingredients</h4>
-                <div id="ingredientsList" style="min-height: 20px; border: 1px dashed #ccc; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
+                <div id="doughIngredientsList" style="min-height: 20px; border: 1px dashed #ccc; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
                     ${ingredients.map((ing, idx) => this.getIngredientRow(ing, idx)).join('')}
                 </div>
                 <button type="button" class="btn btn-secondary" onclick="Doughs.addIngredientRow()">
@@ -234,8 +234,8 @@ const Doughs = {
         }
         
         return `
-            <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                <select name="ing_${idx}_id" class="form-select" style="flex: 2;">
+            <div class="ingredient-row" style="display: flex !important; gap: 8px; margin-bottom: 8px; align-items: center; width: 100%; background: #f9f9f9; padding: 8px; border-radius: 4px;">
+                <select name="ing_${idx}_id" class="form-select" style="flex: 2; min-width: 200px;">
                     ${optionsHTML}
                 </select>
                 <input type="number" name="ing_${idx}_amount" class="form-input" 
@@ -255,12 +255,12 @@ const Doughs = {
     addIngredientRow() {
         console.log('addIngredientRow called');
         
-        const list = document.getElementById('ingredientsList');
-        console.log('ingredientsList element:', list);
+        const list = document.getElementById('doughIngredientsList');
+        console.log('doughIngredientsList element:', list);
         
         if (!list) {
-            console.error('ingredientsList not found');
-            alert('Error: ingredientsList not found');
+            console.error('doughIngredientsList not found');
+            alert('Error: doughIngredientsList not found');
             return;
         }
         
