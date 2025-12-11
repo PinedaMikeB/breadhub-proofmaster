@@ -10,6 +10,7 @@ const PurchaseRequests = {
     statuses: {
         draft: { label: 'Draft', color: '#95A5A6', icon: '📝' },
         pending: { label: 'Pending Review', color: '#F39C12', icon: '🟡' },
+        processed: { label: 'Processed', color: '#9B59B6', icon: '✔️' },
         approved: { label: 'Approved', color: '#3498DB', icon: '✓' },
         purchased: { label: 'Purchased', color: '#27AE60', icon: '✅' },
         cancelled: { label: 'Cancelled', color: '#E74C3C', icon: '❌' }
@@ -52,11 +53,11 @@ const PurchaseRequests = {
                 </div>
             ` : ''}
             
-            <!-- Approved (Ready to Purchase) -->
+            <!-- Approved (Ready to Purchase) - These are now supplier-specific POs -->
             ${approvedRequests.length > 0 ? `
-                <h3 style="margin-bottom: 12px;">✓ Ready to Purchase (${approvedRequests.length})</h3>
+                <h3 style="margin-bottom: 12px;">✓ Ready to Purchase (${approvedRequests.length} PO${approvedRequests.length > 1 ? 's' : ''})</h3>
                 <div class="cards-grid" style="margin-bottom: 24px;">
-                    ${approvedRequests.map(req => this.renderRequestCard(req)).join('')}
+                    ${approvedRequests.map(req => this.renderPurchaseOrderCard(req)).join('')}
                 </div>
             ` : ''}
             
@@ -68,7 +69,7 @@ const PurchaseRequests = {
                         <tr>
                             <th>Request #</th>
                             <th>Date</th>
-                            <th>Requested By</th>
+                            <th>Supplier</th>
                             <th>Items</th>
                             <th>Total</th>
                             <th>Status</th>
@@ -80,7 +81,7 @@ const PurchaseRequests = {
                             <tr>
                                 <td><strong>${req.requestNumber}</strong></td>
                                 <td>${Utils.formatDate(req.createdAt)}</td>
-                                <td>${req.requestedByName || '-'}</td>
+                                <td>${req.supplierName || req.requestedByName || '-'}</td>
                                 <td>${req.items?.length || 0} items</td>
                                 <td>${Utils.formatCurrency(req.grandTotal || 0)}</td>
                                 <td>
@@ -157,6 +158,85 @@ const PurchaseRequests = {
                 </div>
             </div>
         `;
+    },
+
+    // Render a supplier-specific Purchase Order card (approved status)
+    renderPurchaseOrderCard(req) {
+        const status = this.statuses[req.status];
+        const supplier = Suppliers.getById(req.supplierId);
+        
+        return `
+            <div class="recipe-card">
+                <div class="recipe-card-header" style="background: linear-gradient(135deg, ${status.color} 0%, ${status.color}CC 100%);">
+                    <h3>${req.requestNumber}</h3>
+                    <span class="version">${status.label}</span>
+                </div>
+                <div class="recipe-card-body">
+                    <div class="recipe-stat">
+                        <span>🏪 Supplier:</span>
+                        <span><strong>${req.supplierName || '-'}</strong></span>
+                    </div>
+                    <div class="recipe-stat">
+                        <span>📍 Location:</span>
+                        <span>${req.supplierLocation || supplier?.location || '-'}</span>
+                    </div>
+                    <div class="recipe-stat">
+                        <span>📦 Items:</span>
+                        <span>${req.items?.length || 0} ingredients</span>
+                    </div>
+                    <div class="recipe-stat">
+                        <span>📦 Subtotal:</span>
+                        <span>${Utils.formatCurrency(req.subtotal || 0)}</span>
+                    </div>
+                    <div class="recipe-stat">
+                        <span>🚚 Delivery:</span>
+                        <span>${Utils.formatCurrency(req.deliveryFee || 0)}</span>
+                    </div>
+                    <div class="recipe-stat">
+                        <span>💰 Total:</span>
+                        <span><strong style="color: var(--primary);">${Utils.formatCurrency(req.grandTotal || 0)}</strong></span>
+                    </div>
+                    ${req.supplierMobile ? `
+                        <div class="recipe-stat">
+                            <span>📱 Mobile:</span>
+                            <span><a href="tel:${req.supplierMobile}">${req.supplierMobile}</a></span>
+                        </div>
+                    ` : ''}
+                    ${req.supplierFacebook ? `
+                        <div class="recipe-stat">
+                            <span>📘 FB:</span>
+                            <span><a href="${req.supplierFacebook}" target="_blank">Message</a></span>
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="recipe-card-actions">
+                    <button class="btn btn-primary" onclick="PurchaseRequests.showPurchaseOrder('${req.id}')">View PO</button>
+                    <button class="btn btn-secondary" onclick="PurchaseRequests.markAsPurchased('${req.id}')">✅ Mark Purchased</button>
+                    <button class="btn btn-danger btn-sm" onclick="PurchaseRequests.confirmDelete('${req.id}')" title="Delete">🗑</button>
+                </div>
+            </div>
+        `;
+    },
+
+    // Mark PO as purchased
+    async markAsPurchased(requestId) {
+        if (!confirm('Mark this order as purchased?')) return;
+        
+        try {
+            await DB.update('purchaseRequests', requestId, {
+                status: 'purchased',
+                purchasedAt: new Date().toISOString(),
+                purchasedBy: Auth.currentUser?.uid,
+                purchasedByName: Auth.userProfile?.displayName || 'Unknown'
+            });
+            
+            Toast.success('Order marked as purchased!');
+            await this.load();
+            this.render();
+        } catch (error) {
+            console.error('Error marking as purchased:', error);
+            Toast.error('Failed to update');
+        }
     },
 
     // Baker creates new request
@@ -354,7 +434,7 @@ const PurchaseRequests = {
         Modal.open({
             title: `📋 Review: ${req.requestNumber}`,
             content: this.getReviewContent(this.currentRequest),
-            saveText: '✓ Approve & Generate PO',
+            saveText: '✓ Generate PO(s) by Supplier',
             width: '900px',
             onSave: () => this.approveRequest(requestId)
         });
@@ -447,6 +527,17 @@ const PurchaseRequests = {
         const comparison = IngredientPrices.getComparisonTable(item.ingredientId, item.qtyNeeded);
         const qtyKg = (item.qtyNeeded / 1000).toFixed(2);
         
+        // Fix: Make sure we have a selected supplier
+        if (!item.selectedSupplierId && comparison.length > 0) {
+            const bestOption = comparison.find(c => c.inServiceArea) || comparison[0];
+            item.selectedSupplierId = bestOption.supplierId;
+            item.supplierName = bestOption.supplierName;
+            item.unitPrice = bestOption.purchasePrice;
+            item.packageSize = bestOption.packageSize;
+            item.packagesNeeded = bestOption.packagesNeeded;
+            item.totalPrice = bestOption.itemTotal;
+        }
+        
         return `
             <div id="reviewItem_${idx}" style="border: 1px solid var(--bg-input); border-radius: 10px; margin-bottom: 16px; overflow: hidden;">
                 <div style="background: var(--bg-input); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
@@ -465,7 +556,7 @@ const PurchaseRequests = {
                             </select>
                         </div>
                         
-                        <span style="color: var(--text-secondary); font-size: 0.85rem;">
+                        <span id="reviewPkgInfo_${idx}" style="color: var(--text-secondary); font-size: 0.85rem;">
                             → ${item.packagesNeeded} pkg${item.packagesNeeded > 1 ? 's' : ''} @ ${item.packageSize}g
                         </span>
                     </div>
@@ -491,12 +582,17 @@ const PurchaseRequests = {
                             </thead>
                             <tbody>
                                 ${comparison.map((row, rowIdx) => `
-                                    <tr style="border-bottom: 1px solid var(--bg-input); ${!row.inServiceArea ? 'opacity: 0.5;' : ''}">
+                                    <tr style="border-bottom: 1px solid var(--bg-input); ${!row.inServiceArea ? 'opacity: 0.6;' : ''}" 
+                                        onclick="${row.inServiceArea ? `PurchaseRequests.selectSupplier(${idx}, '${row.supplierId}')` : ''}"
+                                        style="cursor: ${row.inServiceArea ? 'pointer' : 'not-allowed'};">
                                         <td style="padding: 8px;">
-                                            <input type="radio" name="supplier_${idx}" value="${row.supplierId}"
+                                            <input type="radio" 
+                                                   name="supplierRadio_${idx}" 
+                                                   id="radio_${idx}_${row.supplierId}"
+                                                   value="${row.supplierId}"
                                                    ${item.selectedSupplierId === row.supplierId ? 'checked' : ''}
-                                                   onchange="PurchaseRequests.changeSupplier(${idx}, '${row.supplierId}')"
-                                                   ${!row.inServiceArea ? 'disabled' : ''}>
+                                                   ${!row.inServiceArea ? 'disabled' : ''}
+                                                   onclick="event.stopPropagation(); PurchaseRequests.selectSupplier(${idx}, '${row.supplierId}')">
                                         </td>
                                         <td style="padding: 8px;">
                                             ${rowIdx === 0 && row.inServiceArea ? '⭐ ' : ''}${row.supplierName}
@@ -567,6 +663,11 @@ const PurchaseRequests = {
     },
     
     changeSupplier(itemIdx, newSupplierId) {
+        this.selectSupplier(itemIdx, newSupplierId);
+    },
+    
+    // New unified supplier selection method
+    selectSupplier(itemIdx, newSupplierId) {
         if (!this.currentRequest) return;
         
         const item = this.currentRequest.items[itemIdx];
@@ -586,6 +687,18 @@ const PurchaseRequests = {
             item.packagesNeeded = Math.ceil(item.qtyNeeded / newPrice.packageSize);
             item.totalPrice = item.packagesNeeded * newPrice.purchasePrice;
             item.costPerGram = newPrice.costPerGram;
+            
+            // Update radio button visually
+            const radio = document.getElementById(`radio_${itemIdx}_${newSupplierId}`);
+            if (radio) radio.checked = true;
+            
+            // Update item total display
+            const totalEl = document.getElementById(`reviewItemTotal_${itemIdx}`);
+            if (totalEl) totalEl.textContent = Utils.formatCurrency(item.totalPrice);
+            
+            // Update package info
+            const pkgInfo = document.getElementById(`reviewPkgInfo_${itemIdx}`);
+            if (pkgInfo) pkgInfo.textContent = `→ ${item.packagesNeeded} pkg${item.packagesNeeded > 1 ? 's' : ''} @ ${item.packageSize}g`;
         }
         
         // Recalculate groups
@@ -703,18 +816,136 @@ const PurchaseRequests = {
         const reviewerNotes = document.getElementById('reviewerNotes')?.value || '';
         
         try {
+            // Group items by supplier - each supplier gets their own PO
+            const supplierGroups = this.groupBySupplier(this.currentRequest.items);
+            const results = [];
+            
+            for (const group of supplierGroups) {
+                // Check if there's already an approved (not purchased) PR for this supplier
+                const existingPR = this.data.find(pr => 
+                    pr.status === 'approved' && 
+                    pr.supplierId === group.supplierId
+                );
+                
+                if (existingPR) {
+                    // Add items to existing PR
+                    const updatedItems = [...existingPR.items];
+                    
+                    for (const newItem of group.items) {
+                        // Check if this ingredient already exists in the PR
+                        const existingItemIdx = updatedItems.findIndex(i => 
+                            i.ingredientId === newItem.ingredientId && 
+                            i.packageSize === newItem.packageSize
+                        );
+                        
+                        if (existingItemIdx >= 0) {
+                            // Update quantity of existing item
+                            updatedItems[existingItemIdx].qtyNeeded += newItem.qtyNeeded;
+                            updatedItems[existingItemIdx].packagesNeeded = Math.ceil(
+                                updatedItems[existingItemIdx].qtyNeeded / updatedItems[existingItemIdx].packageSize
+                            );
+                            updatedItems[existingItemIdx].totalPrice = 
+                                updatedItems[existingItemIdx].packagesNeeded * updatedItems[existingItemIdx].unitPrice;
+                        } else {
+                            // Add new item
+                            updatedItems.push(newItem);
+                        }
+                    }
+                    
+                    // Recalculate totals for the updated PR
+                    const subtotal = updatedItems.reduce((sum, i) => sum + i.totalPrice, 0);
+                    const deliveryFee = Suppliers.calculateDeliveryFee(group.supplierId, subtotal);
+                    const grandTotal = subtotal + deliveryFee;
+                    
+                    await DB.update('purchaseRequests', existingPR.id, {
+                        items: updatedItems,
+                        subtotal,
+                        deliveryFee,
+                        grandTotal,
+                        updatedAt: new Date().toISOString(),
+                        lastModifiedBy: Auth.currentUser?.uid,
+                        lastModifiedByName: Auth.userProfile?.displayName || 'Unknown'
+                    });
+                    
+                    results.push({
+                        type: 'updated',
+                        requestNumber: existingPR.requestNumber,
+                        supplierName: group.supplierName,
+                        itemCount: group.items.length
+                    });
+                } else {
+                    // Create new PR for this supplier
+                    const today = new Date();
+                    const supplierPRs = this.data.filter(r => 
+                        new Date(r.createdAt).toDateString() === today.toDateString()
+                    ).length + results.length + 1;
+                    
+                    const requestNumber = `PO-${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}-${String(supplierPRs).padStart(3,'0')}`;
+                    
+                    const subtotal = group.subtotal;
+                    const deliveryFee = group.deliveryFee;
+                    const grandTotal = group.groupTotal;
+                    
+                    const newPR = {
+                        requestNumber,
+                        status: 'approved',
+                        supplierId: group.supplierId,
+                        supplierName: group.supplierName,
+                        supplierLocation: group.location,
+                        supplierMobile: group.mobile,
+                        supplierFacebook: group.facebook,
+                        items: group.items,
+                        subtotal,
+                        deliveryFee,
+                        grandTotal,
+                        requestedBy: this.currentRequest.requestedBy,
+                        requestedByName: this.currentRequest.requestedByName,
+                        originalRequestNumber: this.currentRequest.requestNumber,
+                        notes: this.currentRequest.notes,
+                        reviewerNotes,
+                        approvedBy: Auth.currentUser?.uid,
+                        approvedByName: Auth.userProfile?.displayName || 'Unknown',
+                        approvedAt: new Date().toISOString(),
+                        createdAt: new Date().toISOString()
+                    };
+                    
+                    await DB.add('purchaseRequests', newPR);
+                    
+                    results.push({
+                        type: 'created',
+                        requestNumber,
+                        supplierName: group.supplierName,
+                        itemCount: group.items.length
+                    });
+                }
+            }
+            
+            // Mark original request as processed
             await DB.update('purchaseRequests', requestId, {
-                status: 'approved',
-                items: this.currentRequest.items,
-                supplierGroups: this.currentRequest.supplierGroups,
-                grandTotal: this.currentRequest.grandTotal,
-                reviewerNotes: reviewerNotes,
-                approvedBy: Auth.currentUser?.uid,
-                approvedByName: Auth.userProfile?.displayName || 'Unknown',
-                approvedAt: new Date().toISOString()
+                status: 'processed',
+                processedAt: new Date().toISOString(),
+                processedBy: Auth.currentUser?.uid,
+                processedByName: Auth.userProfile?.displayName || 'Unknown',
+                processedInto: results.map(r => r.requestNumber)
             });
             
-            Toast.success('Request approved! Purchase order ready.');
+            // Show summary
+            const created = results.filter(r => r.type === 'created');
+            const updated = results.filter(r => r.type === 'updated');
+            
+            let message = '✅ Purchase Orders generated!\n\n';
+            if (created.length > 0) {
+                message += `Created ${created.length} new PO(s):\n`;
+                created.forEach(r => message += `• ${r.requestNumber} - ${r.supplierName} (${r.itemCount} items)\n`);
+            }
+            if (updated.length > 0) {
+                message += `\nUpdated ${updated.length} existing PO(s):\n`;
+                updated.forEach(r => message += `• ${r.requestNumber} - ${r.supplierName} (+${r.itemCount} items)\n`);
+            }
+            
+            Toast.success(`Generated ${results.length} Purchase Order(s)!`);
+            alert(message);
+            
             Modal.close();
             this.currentRequest = null;
             await this.load();
