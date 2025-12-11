@@ -293,29 +293,31 @@ const Ingredients = {
                 <form id="priceForm">
                     <input type="hidden" name="ingredientId" value="${ingredientId}">
                     
-                    <div class="form-group">
-                        <label>Supplier *</label>
-                        <select name="supplierId" class="form-select" required>
-                            <option value="">Select supplier...</option>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--text-primary);">🏪 Supplier *</label>
+                        <select name="supplierId" id="newSupplierId" class="form-select" required style="width: 100%; padding: 10px; font-size: 1rem;">
+                            <option value="">-- Select a supplier --</option>
                             ${availableSuppliers.map(s => {
                                 const inArea = Suppliers.isInServiceArea(s.location);
-                                return `<option value="${s.id}" ${!inArea ? 'style="color: var(--text-secondary);"' : ''}>
-                                    ${s.companyName} (${s.location || 'No location'}) ${!inArea ? '- Outside area' : ''}
+                                return `<option value="${s.id}">
+                                    ${s.companyName} (${s.location || 'No location'}) ${!inArea ? '⚠️ Outside area' : ''}
                                 </option>`;
                             }).join('')}
                         </select>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                         <div class="form-group">
-                            <label>Purchase Price (₱) *</label>
+                            <label style="display: block; margin-bottom: 6px; font-weight: 500;">💰 Purchase Price (₱) *</label>
                             <input type="number" name="purchasePrice" id="newPurchasePrice" class="form-input" 
-                                   step="0.01" min="0" required placeholder="e.g., 45.00">
+                                   step="0.01" min="0" required placeholder="e.g., 45.00"
+                                   oninput="Ingredients.calculateCostPerGram()">
                         </div>
                         <div class="form-group">
-                            <label>Package Size (grams) *</label>
+                            <label style="display: block; margin-bottom: 6px; font-weight: 500;">📦 Package Size (grams) *</label>
                             <input type="number" name="packageSize" id="newPackageSize" class="form-input" 
-                                   step="1" min="1" required placeholder="e.g., 1000">
+                                   step="1" min="1" required placeholder="e.g., 1000"
+                                   oninput="Ingredients.calculateCostPerGram()">
                         </div>
                     </div>
                     
@@ -328,30 +330,36 @@ const Ingredients = {
             saveText: 'Add Price',
             onSave: () => this.savePrice(ingredientId)
         });
+    },
+    
+    // Calculate cost per gram (called via oninput)
+    calculateCostPerGram() {
+        const priceInput = document.getElementById('newPurchasePrice');
+        const sizeInput = document.getElementById('newPackageSize');
+        const display = document.getElementById('newCostPerGram');
         
-        // Setup calculation
-        setTimeout(() => {
-            const priceInput = document.getElementById('newPurchasePrice');
-            const sizeInput = document.getElementById('newPackageSize');
-            const display = document.getElementById('newCostPerGram');
-            
-            const calc = () => {
-                const price = parseFloat(priceInput.value) || 0;
-                const size = parseFloat(sizeInput.value) || 0;
-                const costPerGram = size > 0 ? price / size : 0;
-                display.textContent = Utils.formatCurrency(costPerGram);
-            };
-            
-            priceInput?.addEventListener('input', calc);
-            sizeInput?.addEventListener('input', calc);
-        }, 100);
+        if (!priceInput || !sizeInput || !display) return;
+        
+        const price = parseFloat(priceInput.value) || 0;
+        const size = parseFloat(sizeInput.value) || 0;
+        const costPerGram = size > 0 ? price / size : 0;
+        display.textContent = Utils.formatCurrency(costPerGram);
     },
 
     async savePrice(ingredientId) {
         const data = Modal.getFormData();
         
-        if (!data.supplierId || !data.purchasePrice || !data.packageSize) {
-            Toast.error('Please fill all required fields');
+        // Better validation with specific error messages
+        if (!data.supplierId) {
+            Toast.error('Please select a supplier');
+            return;
+        }
+        if (!data.purchasePrice || data.purchasePrice <= 0) {
+            Toast.error('Please enter a valid purchase price');
+            return;
+        }
+        if (!data.packageSize || data.packageSize <= 0) {
+            Toast.error('Please enter a valid package size');
             return;
         }
         
@@ -386,21 +394,24 @@ const Ingredients = {
                     <input type="hidden" name="ingredientId" value="${price.ingredientId}">
                     <input type="hidden" name="supplierId" value="${price.supplierId}">
                     
-                    <div class="form-group">
-                        <label>Supplier</label>
-                        <input type="text" class="form-input" value="${supplier?.companyName || 'Unknown'}" disabled>
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-weight: 500;">🏪 Supplier</label>
+                        <input type="text" class="form-input" value="${supplier?.companyName || 'Unknown'}" disabled 
+                               style="background: var(--bg-input); color: var(--text-secondary);">
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                         <div class="form-group">
-                            <label>Purchase Price (₱) *</label>
+                            <label style="display: block; margin-bottom: 6px; font-weight: 500;">💰 Purchase Price (₱) *</label>
                             <input type="number" name="purchasePrice" id="editPurchasePrice" class="form-input" 
-                                   step="0.01" min="0" required value="${price.purchasePrice}">
+                                   step="0.01" min="0" required value="${price.purchasePrice}"
+                                   oninput="Ingredients.calculateEditCostPerGram()">
                         </div>
                         <div class="form-group">
-                            <label>Package Size (grams) *</label>
+                            <label style="display: block; margin-bottom: 6px; font-weight: 500;">📦 Package Size (grams) *</label>
                             <input type="number" name="packageSize" id="editPackageSize" class="form-input" 
-                                   step="1" min="1" required value="${price.packageSize}">
+                                   step="1" min="1" required value="${price.packageSize}"
+                                   oninput="Ingredients.calculateEditCostPerGram()">
                         </div>
                     </div>
                     
@@ -415,23 +426,20 @@ const Ingredients = {
             saveText: 'Update Price',
             onSave: () => this.updatePrice(priceId)
         });
+    },
+    
+    // Calculate cost per gram for edit modal
+    calculateEditCostPerGram() {
+        const priceInput = document.getElementById('editPurchasePrice');
+        const sizeInput = document.getElementById('editPackageSize');
+        const display = document.getElementById('editCostPerGram');
         
-        // Setup calculation
-        setTimeout(() => {
-            const priceInput = document.getElementById('editPurchasePrice');
-            const sizeInput = document.getElementById('editPackageSize');
-            const display = document.getElementById('editCostPerGram');
-            
-            const calc = () => {
-                const priceVal = parseFloat(priceInput.value) || 0;
-                const size = parseFloat(sizeInput.value) || 0;
-                const costPerGram = size > 0 ? priceVal / size : 0;
-                display.textContent = Utils.formatCurrency(costPerGram);
-            };
-            
-            priceInput?.addEventListener('input', calc);
-            sizeInput?.addEventListener('input', calc);
-        }, 100);
+        if (!priceInput || !sizeInput || !display) return;
+        
+        const price = parseFloat(priceInput.value) || 0;
+        const size = parseFloat(sizeInput.value) || 0;
+        const costPerGram = size > 0 ? price / size : 0;
+        display.textContent = Utils.formatCurrency(costPerGram);
     },
     
     async updatePrice(priceId) {
