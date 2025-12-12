@@ -381,13 +381,108 @@ const PurchaseRequests = {
         });
     },
     
+    // Show create modal with pre-filled low stock items (from Production)
+    showCreateModalWithItems(lowStockItems) {
+        // Calculate suggested quantities (need - have, converted to kg and rounded up)
+        const suggestedQtys = {};
+        lowStockItems.forEach(item => {
+            const deficit = Math.max(0, item.amount - item.currentStock);
+            // Round up to nearest 0.5 kg for convenience
+            suggestedQtys[item.ingredientId] = Math.ceil((deficit / 1000) * 2) / 2;
+        });
+        
+        Modal.open({
+            title: '🛒 Purchase Request - Low Stock Items',
+            content: `
+                <form id="purchaseRequestForm">
+                    <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                        These items are needed for your production. Adjust quantities as needed.
+                    </p>
+                    
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--bg-input); border-radius: 8px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead style="background: var(--bg-input); position: sticky; top: 0;">
+                                <tr>
+                                    <th style="padding: 12px; text-align: left; width: 40px;">
+                                        <input type="checkbox" id="selectAllIngredients" onclick="PurchaseRequests.toggleSelectAll()" checked>
+                                    </th>
+                                    <th style="padding: 12px; text-align: left;">Ingredient</th>
+                                    <th style="padding: 12px; text-align: center; width: 100px;">Need</th>
+                                    <th style="padding: 12px; text-align: center; width: 100px;">Have</th>
+                                    <th style="padding: 12px; text-align: right; width: 120px;">Order Qty</th>
+                                    <th style="padding: 12px; text-align: center; width: 80px;">Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${lowStockItems.map(item => {
+                                    const ing = Ingredients.getById(item.ingredientId);
+                                    const bestPrice = IngredientPrices.getCheapest(item.ingredientId, false);
+                                    const priceInfo = bestPrice 
+                                        ? `₱${bestPrice.purchasePrice} / ${bestPrice.packageSize >= 1000 ? (bestPrice.packageSize/1000) + 'kg' : bestPrice.packageSize + 'g'}`
+                                        : 'No supplier';
+                                    const supplierName = bestPrice ? Suppliers.getById(bestPrice.supplierId)?.companyName : '';
+                                    
+                                    return `
+                                    <tr style="border-bottom: 1px solid var(--bg-input); background: #FFF5F5;">
+                                        <td style="padding: 12px;">
+                                            <input type="checkbox" name="ingredient_${item.ingredientId}" data-ingredient-id="${item.ingredientId}" checked ${!bestPrice ? 'disabled' : ''}>
+                                        </td>
+                                        <td style="padding: 12px;">
+                                            <strong>${item.name}</strong>
+                                            <br><small style="color: ${bestPrice ? 'var(--primary)' : 'var(--danger)'}; font-weight: 500;">${priceInfo}</small>
+                                            ${supplierName ? `<small style="color: var(--text-secondary);"> • ${supplierName}</small>` : ''}
+                                        </td>
+                                        <td style="padding: 12px; text-align: center; color: var(--danger);">
+                                            <strong>${Utils.formatWeight(item.amount)}</strong>
+                                        </td>
+                                        <td style="padding: 12px; text-align: center; color: var(--warning);">
+                                            ${Utils.formatWeight(item.currentStock)}
+                                        </td>
+                                        <td style="padding: 12px; text-align: right;">
+                                            <input type="number" name="qty_${item.ingredientId}" class="form-input" 
+                                                   style="width: 100px; text-align: right;" min="0" step="0.5"
+                                                   value="${suggestedQtys[item.ingredientId] || 1}" ${!bestPrice ? 'disabled' : ''}>
+                                        </td>
+                                        <td style="padding: 12px; text-align: center;">
+                                            <select name="unit_${item.ingredientId}" class="form-select" style="width: 80px;" ${!bestPrice ? 'disabled' : ''}>
+                                                <option value="g">g</option>
+                                                <option value="kg" selected>kg</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                `}).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label>Notes (optional)</label>
+                        <textarea name="notes" class="form-textarea" 
+                                  placeholder="e.g., Urgent - need for today's production"></textarea>
+                    </div>
+                </form>
+            `,
+            saveText: '📋 Submit Request',
+            width: '800px',
+            onSave: () => this.submitRequestFromProduction()
+        });
+    },
+    
+    // Submit request and return to production
+    async submitRequestFromProduction() {
+        // Use same logic as submitRequest
+        const result = await this.submitRequest(true); // true = return to production
+        
+        // Note: submitRequest will handle the return to production
+    },
+    
     toggleSelectAll() {
         const selectAll = document.getElementById('selectAllIngredients');
         const checkboxes = document.querySelectorAll('[data-ingredient-id]');
         checkboxes.forEach(cb => cb.checked = selectAll.checked);
     },
     
-    async submitRequest() {
+    async submitRequest(returnToProduction = false) {
         // Collect selected items
         const items = [];
         
@@ -400,8 +495,8 @@ const PurchaseRequests = {
                 let qtyGrams = parseFloat(qtyInput.value);
                 if (unitSelect?.value === 'kg') qtyGrams *= 1000;
                 
-                // Find best supplier (cheapest in service area)
-                const bestPrice = IngredientPrices.getCheapest(ing.id, true);
+                // Find best supplier (cheapest, including outside service area)
+                const bestPrice = IngredientPrices.getCheapest(ing.id, false);
                 const supplier = bestPrice ? Suppliers.getById(bestPrice.supplierId) : null;
                 
                 // Calculate packages needed
@@ -428,7 +523,7 @@ const PurchaseRequests = {
         
         if (items.length === 0) {
             Toast.error('Please select at least one ingredient with quantity');
-            return;
+            return false;
         }
         
         // Calculate supplier groups and totals
@@ -454,7 +549,8 @@ const PurchaseRequests = {
             items,
             supplierGroups,
             grandTotal,
-            notes
+            notes,
+            fromProduction: returnToProduction
         };
         
         try {
@@ -463,9 +559,20 @@ const PurchaseRequests = {
             Modal.close();
             await this.load();
             this.render();
+            
+            // Return to production if requested
+            if (returnToProduction) {
+                setTimeout(() => {
+                    App.showView('production');
+                    Toast.info('Returned to production planning. Stock will update after items are received.');
+                }, 500);
+            }
+            
+            return true;
         } catch (error) {
             console.error('Error creating request:', error);
             Toast.error('Failed to create request');
+            return false;
         }
     },
     

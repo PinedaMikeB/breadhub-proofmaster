@@ -183,6 +183,9 @@ const Production = {
         const missingPrices = ingredients.filter(i => !i.hasPrice);
         const insufficientStock = ingredients.filter(i => !i.hasEnough);
         
+        // Store insufficient stock items for purchase request
+        this.lowStockItems = insufficientStock;
+        
         let warningsHTML = '';
         
         if (missingPrices.length > 0) {
@@ -197,6 +200,11 @@ const Production = {
             warningsHTML += `
                 <div style="background: #FDEDEC; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; color: #922B21;">
                     ❌ <strong>Low stock:</strong> ${insufficientStock.map(i => `${i.name} (need ${Utils.formatWeight(i.amount)}, have ${Utils.formatWeight(i.currentStock)})`).join(', ')}
+                </div>
+                <div style="text-align: center; margin-bottom: 12px;">
+                    <button class="btn btn-primary" onclick="Production.requestToBuy()" style="background: linear-gradient(135deg, #E74C3C 0%, #C0392B 100%);">
+                        🛒 Request To Buy Low Stock Items
+                    </button>
                 </div>
             `;
         }
@@ -216,6 +224,20 @@ const Production = {
                 </div>
             `;
         }).join('');
+    },
+    
+    // Open Purchase Request modal pre-filled with low stock items
+    requestToBuy() {
+        if (!this.lowStockItems || this.lowStockItems.length === 0) {
+            Toast.warning('No low stock items to purchase');
+            return;
+        }
+        
+        // Store that we came from production
+        this.returnToProduction = true;
+        
+        // Open custom purchase request modal with pre-filled items
+        PurchaseRequests.showCreateModalWithItems(this.lowStockItems);
     },
     
     calculateEstimatedCost() {
