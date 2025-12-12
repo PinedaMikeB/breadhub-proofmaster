@@ -104,6 +104,28 @@ const Ingredients = {
         return cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : '-';
     },
     
+    // Get cost per gram for an ingredient (used in production calculations)
+    // Does NOT filter by service area to include all supplier prices
+    getCostPerGram(ingredientId) {
+        // First try to get price based on costing method
+        const costPrice = IngredientPrices.getPriceForCosting(ingredientId);
+        if (costPrice && costPrice.costPerGram > 0) {
+            return costPrice.costPerGram;
+        }
+        
+        // Fallback: get cheapest from ANY supplier (not just service area)
+        const cheapest = IngredientPrices.getCheapest(ingredientId, false);
+        if (cheapest && cheapest.costPerGram > 0) {
+            return cheapest.costPerGram;
+        }
+        
+        return 0;
+    },
+    
+    getById(id) {
+        return this.data.find(i => i.id === id);
+    },
+    
     showAddModal() {
         Modal.open({
             title: 'Add Ingredient',

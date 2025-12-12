@@ -25,7 +25,7 @@ const CONFIG = {
     
     // Default values
     defaults: {
-        doughBuffer: 0.10,          // 10% extra dough
+        doughBuffer: 0,              // No buffer (was 10% extra dough)
         maxDoughAge: 90,            // minutes
         laborCostPerHour: 39,       // ₱39/hour minimum wage
         overheadPerPiece: 0.80      // ₱0.80 per piece

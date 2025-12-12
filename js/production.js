@@ -110,9 +110,19 @@ const Production = {
         const totalDough = this.plannedProducts.reduce((sum, p) => sum + p.doughNeeded, 0);
         const buffer = CONFIG.defaults.doughBuffer;
         const totalWithBuffer = Math.ceil(totalDough * (1 + buffer));
+        const totalPieces = this.plannedProducts.reduce((sum, p) => sum + p.pieces, 0);
         
         document.getElementById('totalDough').textContent = Utils.formatWeight(totalDough);
-        document.getElementById('totalDoughBuffer').textContent = Utils.formatWeight(totalWithBuffer);
+        
+        // Only show buffer if > 0
+        const bufferEl = document.getElementById('totalDoughBuffer');
+        const bufferRow = bufferEl?.closest('.recipe-stat');
+        if (buffer > 0) {
+            bufferEl.textContent = Utils.formatWeight(totalWithBuffer);
+            if (bufferRow) bufferRow.style.display = '';
+        } else {
+            if (bufferRow) bufferRow.style.display = 'none';
+        }
         
         // Calculate ingredients based on dough recipe
         const ingredients = this.calculateIngredients(totalWithBuffer);
@@ -121,6 +131,13 @@ const Production = {
         // Calculate estimated cost
         const estimatedCost = this.calculateEstimatedCost();
         document.getElementById('estimatedCost').textContent = Utils.formatCurrency(estimatedCost);
+        
+        // Calculate and show cost per piece
+        const costPerPiece = totalPieces > 0 ? estimatedCost / totalPieces : 0;
+        const costPerPieceEl = document.getElementById('costPerPiece');
+        if (costPerPieceEl) {
+            costPerPieceEl.textContent = Utils.formatCurrency(costPerPiece);
+        }
     },
     
     calculateIngredients(totalDough) {
