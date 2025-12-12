@@ -133,17 +133,27 @@ const Production = {
         const doughRecipe = Doughs.getById(firstProduct.doughRecipeId);
         if (!doughRecipe) return [];
         
-        // Calculate scale factor
+        // Calculate scale factor based on recipe yield
         const baseYield = doughRecipe.yield || 1000;
         const scaleFactor = totalDough / baseYield;
         
         return (doughRecipe.ingredients || []).map(ing => {
             const ingredient = Ingredients.getById(ing.ingredientId);
             const scaledAmount = Math.ceil(ing.amount * scaleFactor);
+            const currentStock = ingredient?.currentStock || 0;
+            const hasEnough = currentStock >= scaledAmount;
+            const costPerGram = ingredient ? Ingredients.getCostPerGram(ing.ingredientId) : 0;
+            const hasPrice = costPerGram > 0;
+            
             return {
+                ingredientId: ing.ingredientId,
                 name: ingredient?.name || 'Unknown',
                 amount: scaledAmount,
-                unit: ing.unit
+                unit: ing.unit,
+                currentStock,
+                hasEnough,
+                hasPrice,
+                costPerGram
             };
         });
     },
@@ -152,12 +162,43 @@ const Production = {
         const container = document.getElementById('ingredientsList');
         if (!container) return;
         
-        container.innerHTML = ingredients.map(ing => `
-            <div class="ingredient-item">
-                <span>${ing.name}</span>
-                <span>${ing.amount}${ing.unit}</span>
-            </div>
-        `).join('');
+        // Check for issues
+        const missingPrices = ingredients.filter(i => !i.hasPrice);
+        const insufficientStock = ingredients.filter(i => !i.hasEnough);
+        
+        let warningsHTML = '';
+        
+        if (missingPrices.length > 0) {
+            warningsHTML += `
+                <div style="background: #FEF3E2; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; color: #8B5A00;">
+                    ⚠️ <strong>Missing prices:</strong> ${missingPrices.map(i => i.name).join(', ')}
+                </div>
+            `;
+        }
+        
+        if (insufficientStock.length > 0) {
+            warningsHTML += `
+                <div style="background: #FDEDEC; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; color: #922B21;">
+                    ❌ <strong>Low stock:</strong> ${insufficientStock.map(i => `${i.name} (need ${Utils.formatWeight(i.amount)}, have ${Utils.formatWeight(i.currentStock)})`).join(', ')}
+                </div>
+            `;
+        }
+        
+        container.innerHTML = warningsHTML + ingredients.map(ing => {
+            const stockColor = ing.hasEnough ? 'var(--success)' : 'var(--danger)';
+            const stockIcon = ing.hasEnough ? '✓' : '✗';
+            const priceWarning = !ing.hasPrice ? ' <span style="color: var(--warning);" title="No price set">⚠️</span>' : '';
+            
+            return `
+                <div class="ingredient-item" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>${ing.name}${priceWarning}</span>
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <span>${Utils.formatWeight(ing.amount)}</span>
+                        <span style="color: ${stockColor}; font-size: 0.8rem;" title="Stock: ${Utils.formatWeight(ing.currentStock)}">${stockIcon}</span>
+                    </span>
+                </div>
+            `;
+        }).join('');
     },
     
     calculateEstimatedCost() {
@@ -165,7 +206,9 @@ const Production = {
             const product = Products.getById(p.productId);
             if (!product) return total;
             const cost = Products.calculateProductCost(product);
-            return total + (cost.total * p.pieces);
+            // Use totalCost (not total) and handle NaN
+            const productCost = cost.totalCost || 0;
+            return total + (productCost * p.pieces);
         }, 0);
     },
     
