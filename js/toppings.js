@@ -132,7 +132,7 @@ const Toppings = {
                 </div>
                 
                 <h4 style="margin: 16px 0 8px;">Ingredients</h4>
-                <div id="ingredientsList">
+                <div id="toppingIngredientsList">
                     ${ingredients.map((ing, idx) => this.getIngredientRow(ing, idx)).join('')}
                 </div>
                 <button type="button" class="btn btn-secondary" onclick="Toppings.addIngredientRow()">
@@ -212,7 +212,7 @@ const Toppings = {
     },
     
     addIngredientRow() {
-        const list = document.getElementById('ingredientsList');
+        const list = document.getElementById('toppingIngredientsList');
         const idx = list.children.length;
         list.insertAdjacentHTML('beforeend', this.getIngredientRow({}, idx));
     },
