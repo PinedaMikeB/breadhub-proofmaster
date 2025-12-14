@@ -78,7 +78,7 @@ const Toppings = {
             width: '700px',
             onSave: () => this.save()
         });
-        this.setupIngredientAdder();
+        this.setupCalculation();
     },
     
     async edit(id) {
@@ -92,7 +92,7 @@ const Toppings = {
             width: '700px',
             onSave: () => this.save(id)
         });
-        this.setupIngredientAdder();
+        this.setupCalculation();
     },
     
     async view(id) {
@@ -118,19 +118,6 @@ const Toppings = {
                            value="${topping.name || ''}" required>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div class="form-group">
-                        <label>Batch Size (g) *</label>
-                        <input type="number" name="batchSize" class="form-input" 
-                               value="${topping.batchSize || 500}" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Version</label>
-                        <input type="text" name="version" class="form-input" 
-                               value="${topping.version || '1.0'}">
-                    </div>
-                </div>
-                
                 <h4 style="margin: 16px 0 8px;">Ingredients</h4>
                 <div id="toppingIngredientsList">
                     ${ingredients.map((ing, idx) => this.getIngredientRow(ing, idx)).join('')}
@@ -138,6 +125,36 @@ const Toppings = {
                 <button type="button" class="btn btn-secondary" onclick="Toppings.addIngredientRow()">
                     + Add Ingredient
                 </button>
+                
+                <!-- BATCH CALCULATION DISPLAY -->
+                <div id="toppingCalcDisplay" style="background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); padding: 16px; border-radius: 12px; margin: 16px 0; border: 2px solid #4CAF50;">
+                    <h4 style="margin: 0 0 12px; color: #2E7D32;">📊 Batch Calculation</h4>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                        <div class="recipe-stat">
+                            <span>⚖️ Total Batch Weight:</span>
+                            <span id="toppingTotalWeight" style="font-weight: bold;">0g</span>
+                        </div>
+                        <div class="recipe-stat">
+                            <span>💰 Total Batch Cost:</span>
+                            <span id="toppingTotalCost" style="font-weight: bold; color: var(--danger);">₱0.00</span>
+                        </div>
+                        <div class="recipe-stat" style="background: white; padding: 8px; border-radius: 6px;">
+                            <span>🧁 Pieces Producible:</span>
+                            <span id="toppingPiecesCount" style="font-weight: bold; color: var(--primary); font-size: 1.2rem;">0 pcs</span>
+                        </div>
+                        <div class="recipe-stat" style="background: white; padding: 8px; border-radius: 6px;">
+                            <span>💵 Cost per Piece:</span>
+                            <span id="toppingCostPerPiece" style="font-weight: bold; color: var(--success); font-size: 1.2rem;">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <h4 style="margin: 16px 0 8px;">Standard Serving</h4>
+                <div class="form-group">
+                    <label>Amount per piece (g)</label>
+                    <input type="number" name="servingAmount" id="toppingServingAmount" class="form-input" 
+                           value="${topping.standardServing?.amount || 20}" min="1">
+                </div>
                 
                 <h4 style="margin: 16px 0 8px;">Preparation</h4>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -170,13 +187,6 @@ const Toppings = {
                     </div>
                 </div>
                 
-                <h4 style="margin: 16px 0 8px;">Standard Serving</h4>
-                <div class="form-group">
-                    <label>Amount per piece (g)</label>
-                    <input type="number" name="servingAmount" class="form-input" 
-                           value="${topping.standardServing?.amount || 20}">
-                </div>
-                
                 <div class="form-group">
                     <label>Notes</label>
                     <textarea name="notes" class="form-textarea">${topping.notes || ''}</textarea>
@@ -192,29 +202,69 @@ const Toppings = {
         
         return `
             <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <select name="ing_${idx}_id" class="form-select" style="flex: 2;">
+                <select name="ing_${idx}_id" class="form-select topping-ing-select" style="flex: 2;" onchange="Toppings.updateCalculation()">
                     <option value="">Select ingredient...</option>
                     ${ingredientOptions}
                 </select>
-                <input type="number" name="ing_${idx}_amount" class="form-input" 
-                       value="${ing.amount || ''}" placeholder="Amount" style="flex: 1;">
+                <input type="number" name="ing_${idx}_amount" class="form-input topping-ing-amount" 
+                       value="${ing.amount || ''}" placeholder="Amount (g)" style="flex: 1;" oninput="Toppings.updateCalculation()">
                 <select name="ing_${idx}_unit" class="form-select" style="flex: 1;">
                     <option value="g" ${ing.unit === 'g' ? 'selected' : ''}>g</option>
                     <option value="mL" ${ing.unit === 'mL' ? 'selected' : ''}>mL</option>
                 </select>
-                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">×</button>
+                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove(); Toppings.updateCalculation();">×</button>
             </div>
         `;
     },
     
-    setupIngredientAdder() {
-        // Can add setup logic here if needed
+    setupCalculation() {
+        const servingInput = document.getElementById('toppingServingAmount');
+        if (servingInput) {
+            servingInput.addEventListener('input', () => this.updateCalculation());
+        }
+        // Initial calculation
+        setTimeout(() => this.updateCalculation(), 100);
+    },
+    
+    updateCalculation() {
+        let totalWeight = 0;
+        let totalCost = 0;
+        
+        // Sum all ingredients
+        document.querySelectorAll('#toppingIngredientsList .ingredient-row').forEach(row => {
+            const select = row.querySelector('.topping-ing-select');
+            const amountInput = row.querySelector('.topping-ing-amount');
+            
+            const ingredientId = select?.value;
+            const amount = parseFloat(amountInput?.value) || 0;
+            
+            if (ingredientId && amount > 0) {
+                totalWeight += amount;
+                
+                // Get cost per gram for this ingredient
+                const costPerGram = Ingredients.getCostPerGram(ingredientId);
+                totalCost += costPerGram * amount;
+            }
+        });
+        
+        const servingAmount = parseFloat(document.getElementById('toppingServingAmount')?.value) || 20;
+        const piecesCount = servingAmount > 0 ? Math.floor(totalWeight / servingAmount) : 0;
+        const costPerPiece = piecesCount > 0 ? totalCost / piecesCount : 0;
+        
+        // Update display
+        document.getElementById('toppingTotalWeight').textContent = totalWeight >= 1000 
+            ? `${(totalWeight / 1000).toFixed(2)}kg` 
+            : `${totalWeight}g`;
+        document.getElementById('toppingTotalCost').textContent = Utils.formatCurrency(totalCost);
+        document.getElementById('toppingPiecesCount').textContent = `${piecesCount} pcs`;
+        document.getElementById('toppingCostPerPiece').textContent = Utils.formatCurrency(costPerPiece);
     },
     
     addIngredientRow() {
         const list = document.getElementById('toppingIngredientsList');
         const idx = list.children.length;
         list.insertAdjacentHTML('beforeend', this.getIngredientRow({}, idx));
+        this.updateCalculation();
     },
     
     getViewHTML(topping) {
@@ -277,10 +327,29 @@ const Toppings = {
         const form = document.getElementById('toppingForm');
         const formData = new FormData(form);
         
+        // Extract ingredients first to calculate batch size
+        const ingredients = [];
+        let idx = 0;
+        let totalWeight = 0;
+        while (document.querySelector(`[name="ing_${idx}_id"]`)) {
+            const ingId = document.querySelector(`[name="ing_${idx}_id"]`)?.value;
+            const amount = parseFloat(document.querySelector(`[name="ing_${idx}_amount"]`)?.value) || 0;
+            const unit = document.querySelector(`[name="ing_${idx}_unit"]`)?.value || 'g';
+            if (ingId && amount > 0) {
+                ingredients.push({
+                    ingredientId: ingId,
+                    amount: amount,
+                    unit: unit
+                });
+                totalWeight += amount;
+            }
+            idx++;
+        }
+        
         const data = {
             name: formData.get('name'),
-            batchSize: parseFloat(formData.get('batchSize')) || 500,
-            version: formData.get('version') || '1.0',
+            batchSize: totalWeight, // Calculated from sum of ingredients
+            version: '1.0',
             preparation: {
                 method: formData.get('prepMethod') || 'mixing',
                 duration: parseFloat(formData.get('prepDuration')) || 10,
@@ -290,25 +359,9 @@ const Toppings = {
             standardServing: {
                 amount: parseFloat(formData.get('servingAmount')) || 20
             },
-            notes: formData.get('notes') || ''
+            notes: formData.get('notes') || '',
+            ingredients: ingredients
         };
-        
-        // Extract ingredients
-        const ingredients = [];
-        let idx = 0;
-        while (formData.has(`ing_${idx}_id`)) {
-            const ingId = formData.get(`ing_${idx}_id`);
-            const amount = formData.get(`ing_${idx}_amount`);
-            if (ingId && amount) {
-                ingredients.push({
-                    ingredientId: ingId,
-                    amount: parseFloat(amount),
-                    unit: formData.get(`ing_${idx}_unit`) || 'g'
-                });
-            }
-            idx++;
-        }
-        data.ingredients = ingredients;
         
         // Calculate costs
         this.calculateCosts(data);
