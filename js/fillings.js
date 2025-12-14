@@ -265,7 +265,6 @@ const Fillings = {
         document.getElementById('fillingPiecesCount').textContent = `${piecesCount} pcs`;
         document.getElementById('fillingCostPerPiece').textContent = Utils.formatCurrency(costPerPiece);
     },
-    },
 
     getViewHTML(filling) {
         const ingredients = filling.ingredients || [];
