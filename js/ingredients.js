@@ -834,5 +834,83 @@ const Ingredients = {
                 {name: "Choco Sauce", category: "other", prices: [{supplierName: "Easy", purchasePrice: 2000, packageSize: 450, costPerGram: 4.444444}]}
             ]
         };
+    },
+
+    // ========== RESET STOCK FUNCTIONALITY ==========
+    
+    showResetStockModal() {
+        // Count ingredients with stock
+        const ingredientsWithStock = this.data.filter(ing => (ing.currentStock || 0) > 0);
+        
+        Modal.open({
+            title: '🔄 Reset All Stock to Zero',
+            content: `
+                <div style="padding: 8px 0;">
+                    <div style="background: #FDEDEC; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--danger);">
+                        <strong>⚠️ Warning:</strong> This will reset <strong>ALL</strong> ingredient stock quantities to zero. 
+                        This action cannot be undone.
+                    </div>
+                    
+                    <div style="background: var(--bg-input); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                        <strong>Ingredients with stock:</strong> ${ingredientsWithStock.length}
+                        ${ingredientsWithStock.length > 0 ? `
+                            <ul style="margin: 8px 0 0 20px; font-size: 0.9rem; color: var(--text-secondary);">
+                                ${ingredientsWithStock.slice(0, 5).map(ing => 
+                                    `<li>${ing.name}: ${this.formatStock(ing.currentStock)}</li>`
+                                ).join('')}
+                                ${ingredientsWithStock.length > 5 ? `<li>...and ${ingredientsWithStock.length - 5} more</li>` : ''}
+                            </ul>
+                        ` : '<p style="color: var(--success); margin-top: 8px;">All ingredients already have zero stock.</p>'}
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><strong>Enter Password to Confirm:</strong></label>
+                        <input type="password" id="resetStockPassword" class="form-input" 
+                               placeholder="Enter password" autocomplete="off">
+                    </div>
+                </div>
+            `,
+            saveText: '🔄 Reset All Stock',
+            saveClass: 'btn-danger',
+            width: '450px',
+            onSave: () => this.executeResetStock()
+        });
+    },
+    
+    async executeResetStock() {
+        const password = document.getElementById('resetStockPassword')?.value;
+        
+        // Check password
+        if (password !== '1234') {
+            Toast.error('Incorrect password');
+            return false; // Keep modal open
+        }
+        
+        const ingredientsWithStock = this.data.filter(ing => (ing.currentStock || 0) > 0);
+        
+        if (ingredientsWithStock.length === 0) {
+            Toast.info('All ingredients already have zero stock');
+            Modal.close();
+            return;
+        }
+        
+        try {
+            // Reset stock for all ingredients
+            let resetCount = 0;
+            for (const ing of ingredientsWithStock) {
+                await DB.update('ingredients', ing.id, {
+                    currentStock: 0
+                });
+                ing.currentStock = 0; // Update local data
+                resetCount++;
+            }
+            
+            Toast.success(`Reset stock for ${resetCount} ingredient${resetCount > 1 ? 's' : ''} to zero`);
+            Modal.close();
+            this.render(); // Refresh the table
+        } catch (error) {
+            console.error('Error resetting stock:', error);
+            Toast.error('Failed to reset stock');
+        }
     }
 };
