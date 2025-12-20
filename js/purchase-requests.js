@@ -1560,6 +1560,15 @@ const PurchaseRequests = {
         
         // Different warnings based on status
         switch (req.status) {
+            case 'received':
+                warningMessage = `
+                    <div style="background: #FDEDEC; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--danger);">
+                        <strong>⚠️ Warning:</strong> This request has been <strong>received</strong> and inventory was updated. 
+                        Deleting it will <strong>reverse the stock changes</strong> - the quantities will be subtracted from your current inventory.
+                    </div>
+                `;
+                confirmText = 'Delete & Reverse Inventory';
+                break;
             case 'purchased':
                 warningMessage = `
                     <div style="background: #FDEDEC; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--danger);">
@@ -1645,10 +1654,33 @@ const PurchaseRequests = {
         if (!req) return;
         
         try {
+            // If request was "received", reverse the inventory changes
+            if (req.status === 'received' && req.items && req.items.length > 0) {
+                for (const item of req.items) {
+                    const ingredient = Ingredients.data.find(i => i.id === item.ingredientId);
+                    if (ingredient) {
+                        const removedStock = item.packagesNeeded * item.packageSize; // in grams
+                        const newStock = Math.max(0, (ingredient.currentStock || 0) - removedStock);
+                        
+                        await DB.update('ingredients', item.ingredientId, {
+                            currentStock: newStock
+                        });
+                        
+                        // Update local data
+                        ingredient.currentStock = newStock;
+                    }
+                }
+                
+                // Refresh ingredients display if visible
+                await Ingredients.load();
+                Ingredients.render();
+            }
+            
             // Delete from Firebase
             await DB.delete('purchaseRequests', requestId);
             
-            Toast.success(`Request ${req.requestNumber} deleted successfully`);
+            const inventoryNote = req.status === 'received' ? ' Inventory reversed.' : '';
+            Toast.success(`Request ${req.requestNumber} deleted successfully.${inventoryNote}`);
             Modal.close();
             await this.load();
             this.render();
