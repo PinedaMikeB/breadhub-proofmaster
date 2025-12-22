@@ -7,28 +7,69 @@
  * - Recipe data (dough, fillings, toppings, costs)
  * - Shop data (images, description, published status)
  * - Single source of truth for pricing
+ * - Main category (bread/drinks) + subcategory for analytics
  */
 
 const Products = {
     data: [],
     categories: [],
     
-    // Unified categories (synced with website)
-    defaultCategories: [
-        { value: 'donut', label: 'Donuts', emoji: '🍩' },
-        { value: 'savory', label: 'Savory', emoji: '🥐' },
-        { value: 'loaf', label: 'Loaf Breads', emoji: '🍞' },
-        { value: 'cookies', label: 'Cookies', emoji: '🍪' },
-        { value: 'cinnamon-rolls', label: 'Cinnamon Rolls', emoji: '🥮' },
-        { value: 'classic-filipino', label: 'Classic Filipino', emoji: '🥖' },
-        { value: 'roti', label: 'Roti', emoji: '🫓' },
-        { value: 'cakes', label: 'Cakes', emoji: '🎂' },
-        { value: 'pandesal', label: 'Pandesal', emoji: '🥯' },
-        { value: 'desserts', label: 'Desserts', emoji: '🧁' },
-        { value: 'drinks', label: 'Drinks', emoji: '🥤' },
-        { value: 'coffee', label: 'Coffee', emoji: '☕' },
-        { value: 'non-coffee', label: 'Non-Coffee Drinks', emoji: '🧃' }
+    // Main categories for analytics
+    mainCategories: [
+        { value: 'bread', label: 'Bread & Pastries', emoji: '🍞' },
+        { value: 'drinks', label: 'Drinks & Beverages', emoji: '🥤' }
     ],
+    
+    // Subcategories with their parent main category
+    defaultCategories: [
+        // BREAD subcategories
+        { value: 'donut', label: 'Donuts', emoji: '🍩', mainCategory: 'bread' },
+        { value: 'savory', label: 'Savory', emoji: '🥐', mainCategory: 'bread' },
+        { value: 'loaf', label: 'Loaf Breads', emoji: '🍞', mainCategory: 'bread' },
+        { value: 'cookies', label: 'Cookies', emoji: '🍪', mainCategory: 'bread' },
+        { value: 'cinnamon-rolls', label: 'Cinnamon Rolls', emoji: '🥮', mainCategory: 'bread' },
+        { value: 'classic-filipino', label: 'Classic Filipino', emoji: '🥖', mainCategory: 'bread' },
+        { value: 'roti', label: 'Roti', emoji: '🫓', mainCategory: 'bread' },
+        { value: 'cakes', label: 'Cakes', emoji: '🎂', mainCategory: 'bread' },
+        { value: 'pandesal', label: 'Pandesal', emoji: '🥯', mainCategory: 'bread' },
+        { value: 'desserts', label: 'Desserts', emoji: '🧁', mainCategory: 'bread' },
+        // DRINKS subcategories
+        { value: 'drinks', label: 'Drinks', emoji: '🥤', mainCategory: 'drinks' },
+        { value: 'coffee', label: 'Coffee', emoji: '☕', mainCategory: 'drinks' },
+        { value: 'non-coffee', label: 'Non-Coffee Drinks', emoji: '🧃', mainCategory: 'drinks' }
+    ],
+    
+    // Get main category from subcategory
+    getMainCategory(subcategory) {
+        const cat = this.defaultCategories.find(c => c.value === subcategory);
+        return cat?.mainCategory || 'bread';
+    },
+    
+    // Called when category dropdown changes - auto-update main category
+    onCategoryChange() {
+        const categorySelect = document.getElementById('categorySelect');
+        const mainCategoryInput = document.getElementById('mainCategoryInput');
+        const badge = document.getElementById('mainCategoryBadge');
+        
+        if (!categorySelect) return;
+        
+        const selectedCategory = categorySelect.value;
+        const mainCat = this.getMainCategory(selectedCategory);
+        
+        // Update hidden input
+        if (mainCategoryInput) {
+            mainCategoryInput.value = mainCat;
+        }
+        
+        // Update badge
+        if (badge) {
+            badge.innerHTML = `
+                <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${mainCat === 'bread' ? '#FFF3E0' : '#E3F2FD'}; color: ${mainCat === 'bread' ? '#E65100' : '#1565C0'};">
+                    ${mainCat === 'bread' ? '🍞 Bread & Pastries' : '🥤 Drinks & Beverages'}
+                </span>
+            `;
+        }
+    },
     
     // Category mapping from old ProofMaster categories to new unified ones
     categoryMapping: {
@@ -138,9 +179,15 @@ const Products = {
             // Get website status from unified schema
             const shopStatus = this.getShopStatus(product);
             
+            // Get main category
+            const mainCat = product.mainCategory || this.getMainCategory(product.category);
+            const mainCatBadge = mainCat === 'bread' 
+                ? '<span style="font-size:0.7rem;padding:2px 6px;background:#FFF3E0;color:#E65100;border-radius:10px;">🍞</span>'
+                : '<span style="font-size:0.7rem;padding:2px 6px;background:#E3F2FD;color:#1565C0;border-radius:10px;">🥤</span>';
+            
             return `
             <div class="recipe-card" data-id="${product.id}">
-                <div class="recipe-card-header" style="background: linear-gradient(135deg, #8E44AD 0%, #9B59B6 100%);">
+                <div class="recipe-card-header" style="background: linear-gradient(135deg, ${mainCat === 'bread' ? '#8E44AD, #9B59B6' : '#1565C0, #42A5F5'});">
                     <h3>${product.name}</h3>
                     <span class="version">${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
@@ -332,6 +379,13 @@ const Products = {
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
         
+        // Get current main category (derive from subcategory if not set)
+        const currentMainCat = product.mainCategory || this.getMainCategory(product.category);
+        
+        // Group subcategories by main category
+        const breadCategories = this.defaultCategories.filter(c => c.mainCategory === 'bread');
+        const drinksCategories = this.defaultCategories.filter(c => c.mainCategory === 'drinks');
+        
         return `
             <form id="productForm">
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
@@ -343,12 +397,27 @@ const Products = {
                     </div>
                     <div class="form-group">
                         <label>Category</label>
-                        <select name="category" class="form-select">
-                            ${this.defaultCategories.map(cat => 
-                                `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
-                            ).join('')}
+                        <select name="category" id="categorySelect" class="form-select" onchange="Products.onCategoryChange()">
+                            <optgroup label="🍞 BREAD & PASTRIES">
+                                ${breadCategories.map(cat => 
+                                    `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
+                                ).join('')}
+                            </optgroup>
+                            <optgroup label="🥤 DRINKS & BEVERAGES">
+                                ${drinksCategories.map(cat => 
+                                    `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
+                                ).join('')}
+                            </optgroup>
                         </select>
+                        <input type="hidden" name="mainCategory" id="mainCategoryInput" value="${currentMainCat}">
                     </div>
+                </div>
+                
+                <!-- Main Category Badge (auto-updated) -->
+                <div id="mainCategoryBadge" style="margin-bottom: 16px;">
+                    <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${currentMainCat === 'bread' ? '#FFF3E0' : '#E3F2FD'}; color: ${currentMainCat === 'bread' ? '#E65100' : '#1565C0'};">
+                        ${currentMainCat === 'bread' ? '🍞 Bread & Pastries' : '🥤 Drinks & Beverages'}
+                    </span>
                 </div>
                 
                 <h4 style="margin: 16px 0 8px;">🥖 Dough Recipe *</h4>
@@ -996,6 +1065,7 @@ const Products = {
         const data = {
             name: formData.get('name'),
             category: formData.get('category'),
+            mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
             doughRecipeId: formData.get('doughRecipeId'),
             fillings,
             toppings,
