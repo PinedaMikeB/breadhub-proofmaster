@@ -2,12 +2,43 @@
  * BreadHub ProofMaster - Products Management
  * Handles product assembly combining dough + multiple toppings + multiple fillings
  * With full cost breakdown and SRP calculation
+ * 
+ * ✅ INTEGRATED with BreadHub.shop Website
+ * - Two-way sync with shopProducts collection
+ * - Auto-creates shop product on save
+ * - Launch Website Admin button
  */
 
 const Products = {
     data: [],
     categories: [],
-    defaultCategories: ['sweet-bread', 'savory-bread', 'pastry', 'roll', 'other'],
+    shopProducts: [], // Cache of website products for linking
+    
+    // Unified categories (synced with website)
+    defaultCategories: [
+        { value: 'donut', label: 'Donuts', emoji: '🍩' },
+        { value: 'savory', label: 'Savory', emoji: '🥐' },
+        { value: 'loaf', label: 'Loaf Breads', emoji: '🍞' },
+        { value: 'cookies', label: 'Cookies', emoji: '🍪' },
+        { value: 'cinnamon-rolls', label: 'Cinnamon Rolls', emoji: '🥮' },
+        { value: 'classic-filipino', label: 'Classic Filipino', emoji: '🥖' },
+        { value: 'roti', label: 'Roti', emoji: '🫓' },
+        { value: 'cakes', label: 'Cakes', emoji: '🎂' },
+        { value: 'pandesal', label: 'Pandesal', emoji: '🥯' },
+        { value: 'desserts', label: 'Desserts', emoji: '🧁' },
+        { value: 'drinks', label: 'Drinks', emoji: '🥤' },
+        { value: 'coffee', label: 'Coffee', emoji: '☕' },
+        { value: 'non-coffee', label: 'Non-Coffee Drinks', emoji: '🧃' }
+    ],
+    
+    // Category mapping from old ProofMaster categories to new unified ones
+    categoryMapping: {
+        'sweet-bread': 'classic-filipino',
+        'savory-bread': 'savory',
+        'pastry': 'desserts',
+        'roll': 'classic-filipino',
+        'other': 'desserts'
+    },
     
     // For tracking dynamic form elements
     fillingCounter: 0,
@@ -16,24 +47,48 @@ const Products = {
     async init() {
         await this.loadCategories();
         await this.load();
+        await this.loadShopProducts();
         this.render();
     },
     
     async loadCategories() {
         try {
             const stored = await DB.getAll('productCategories');
-            if (stored && stored.length > 0) {
+            
+            // Check if we need to migrate to new categories
+            const hasOldCategories = stored.some(c => ['sweet-bread', 'savory-bread', 'pastry', 'roll'].includes(c.value));
+            const hasAllNewCategories = this.defaultCategories.every(dc => 
+                stored.some(c => c.value === dc.value)
+            );
+            
+            if (hasOldCategories || !hasAllNewCategories) {
+                // Migrate to new unified categories
+                console.log('Migrating to unified categories...');
+                
+                // Delete old categories
+                for (const cat of stored) {
+                    await DB.delete('productCategories', cat.id);
+                }
+                
+                // Add new unified categories
+                for (const cat of this.defaultCategories) {
+                    await DB.add('productCategories', cat);
+                }
+                
+                this.categories = this.defaultCategories.map(c => c.value);
+                Toast.success('Categories updated to match website!');
+            } else if (stored && stored.length > 0) {
                 this.categories = stored.map(c => c.value);
             } else {
                 // Initialize with defaults
-                this.categories = [...this.defaultCategories];
+                this.categories = this.defaultCategories.map(c => c.value);
                 for (const cat of this.defaultCategories) {
-                    await DB.add('productCategories', { value: cat, label: this.formatCategory(cat) });
+                    await DB.add('productCategories', cat);
                 }
             }
         } catch (error) {
             console.error('Error loading categories:', error);
-            this.categories = [...this.defaultCategories];
+            this.categories = this.defaultCategories.map(c => c.value);
         }
     },
 
@@ -41,25 +96,75 @@ const Products = {
         try {
             this.data = await DB.getAll('products');
             this.data.sort((a, b) => a.name.localeCompare(b.name));
+            
+            // Auto-migrate old categories in products
+            let migrated = 0;
+            for (const product of this.data) {
+                if (this.categoryMapping[product.category]) {
+                    const newCategory = this.categoryMapping[product.category];
+                    await DB.update('products', product.id, { category: newCategory });
+                    product.category = newCategory;
+                    migrated++;
+                }
+            }
+            if (migrated > 0) {
+                console.log(`Migrated ${migrated} products to new categories`);
+            }
         } catch (error) {
             console.error('Error loading products:', error);
             Toast.error('Failed to load products');
         }
     },
     
+    // Load shop products for linking
+    async loadShopProducts() {
+        try {
+            this.shopProducts = await DB.getAll('shopProducts');
+        } catch (error) {
+            console.error('Error loading shop products:', error);
+            this.shopProducts = [];
+        }
+    },
+    
+    // Find linked shop product
+    getLinkedShopProduct(productId) {
+        return this.shopProducts.find(sp => sp.proofmasterProductId === productId);
+    },
+    
+    // Find shop product by name (for initial auto-linking)
+    findShopProductByName(name) {
+        const normalizedName = name.toLowerCase().trim();
+        return this.shopProducts.find(sp => 
+            sp.name.toLowerCase().trim() === normalizedName
+        );
+    },
+    
     render() {
         const grid = document.getElementById('productsGrid');
         if (!grid) return;
         
-        // Add category management button
+        // Add header buttons
         const header = document.querySelector('#productsView .view-header');
-        if (header && !header.querySelector('.manage-categories-btn')) {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-secondary manage-categories-btn';
-            btn.innerHTML = '🏷️ Categories';
-            btn.style.marginLeft = '8px';
-            btn.onclick = () => this.showCategoriesModal();
-            header.querySelector('.btn-primary')?.after(btn);
+        if (header) {
+            // Category button
+            if (!header.querySelector('.manage-categories-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary manage-categories-btn';
+                btn.innerHTML = '🏷️ Categories';
+                btn.style.marginLeft = '8px';
+                btn.onclick = () => this.showCategoriesModal();
+                header.querySelector('.btn-primary')?.after(btn);
+            }
+            
+            // Sync button
+            if (!header.querySelector('.sync-shop-btn')) {
+                const syncBtn = document.createElement('button');
+                syncBtn.className = 'btn btn-secondary sync-shop-btn';
+                syncBtn.innerHTML = '🔄 Sync All';
+                syncBtn.style.marginLeft = '8px';
+                syncBtn.onclick = () => this.showSyncModal();
+                header.querySelector('.manage-categories-btn')?.after(syncBtn);
+            }
         }
         
         if (this.data.length === 0) {
@@ -77,11 +182,15 @@ const Products = {
                 ? ((product.finalSRP - cost.totalCost) / product.finalSRP * 100) 
                 : 0;
             
+            // Check sync status
+            const linkedShop = this.getLinkedShopProduct(product.id);
+            const syncStatus = this.getSyncStatus(product, linkedShop);
+            
             return `
             <div class="recipe-card" data-id="${product.id}">
                 <div class="recipe-card-header" style="background: linear-gradient(135deg, #8E44AD 0%, #9B59B6 100%);">
                     <h3>${product.name}</h3>
-                    <span class="version">${this.formatCategory(product.category)}</span>
+                    <span class="version">${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 <div class="recipe-card-body">
                     <div class="recipe-stat">
@@ -93,14 +202,20 @@ const Products = {
                         <span>${Utils.formatCurrency(cost.suggestedSRP)}</span>
                     </div>
                     <div class="recipe-stat" style="background: var(--bg-input); padding: 8px; border-radius: 6px; margin: 4px 0;">
-                        <span><strong>Final SRP (Loyverse):</strong></span>
+                        <span><strong>Final SRP:</strong></span>
                         <span style="color: var(--primary); font-size: 1.2rem;"><strong>${Utils.formatCurrency(product.finalSRP || 0)}</strong></span>
                     </div>
                     <div class="recipe-stat">
-                        <span>Actual Margin:</span>
+                        <span>Margin:</span>
                         <span style="color: ${marginPercent >= 30 ? 'var(--success)' : marginPercent >= 20 ? 'var(--warning)' : 'var(--danger)'}">
                             <strong>${marginPercent.toFixed(1)}%</strong>
                         </span>
+                    </div>
+                    
+                    <!-- Website Sync Status -->
+                    <div class="recipe-stat" style="background: ${syncStatus.color}; padding: 6px 8px; border-radius: 6px; margin-top: 8px;">
+                        <span style="font-size: 0.85rem;">${syncStatus.icon} Website:</span>
+                        <span style="font-size: 0.85rem; font-weight: 500;">${syncStatus.text}</span>
                     </div>
                 </div>
                 <div class="recipe-card-actions">
@@ -112,29 +227,75 @@ const Products = {
         `}).join('');
     },
     
+    getSyncStatus(product, linkedShop) {
+        if (!linkedShop) {
+            return {
+                icon: '⚠️',
+                text: 'Not linked',
+                color: '#FFF3CD'
+            };
+        }
+        
+        // Check if prices match
+        const priceMatch = Math.abs((linkedShop.price || 0) - (product.finalSRP || 0)) < 0.01;
+        
+        if (priceMatch) {
+            return {
+                icon: '✅',
+                text: `Synced (₱${product.finalSRP})`,
+                color: '#D4EDDA'
+            };
+        } else {
+            return {
+                icon: '🔄',
+                text: `Price mismatch (Shop: ₱${linkedShop.price})`,
+                color: '#F8D7DA'
+            };
+        }
+    },
+    
     formatCategory(cat) {
         if (!cat) return '-';
         return cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     },
+    
+    formatCategoryWithEmoji(cat) {
+        if (!cat) return '-';
+        const catData = this.defaultCategories.find(c => c.value === cat);
+        if (catData) {
+            return `${catData.emoji} ${catData.label}`;
+        }
+        return this.formatCategory(cat);
+    },
+    
+    getCategoryEmoji(cat) {
+        const catData = this.defaultCategories.find(c => c.value === cat);
+        return catData?.emoji || '🍞';
+    },
+
 
     // Categories Management
     showCategoriesModal() {
+        const catList = this.defaultCategories.map(cat => `
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 8px;">
+                <span style="font-size: 1.3rem;">${cat.emoji}</span>
+                <span style="flex: 1;">${cat.label}</span>
+                <span style="color: var(--text-secondary); font-size: 0.8rem;">${cat.value}</span>
+            </div>
+        `).join('');
+        
         Modal.open({
-            title: '🏷️ Manage Product Categories',
+            title: '🏷️ Product Categories (Synced with Website)',
             content: `
-                <div id="categoriesList" style="margin-bottom: 16px;">
-                    ${this.categories.map((cat, idx) => `
-                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 8px;">
-                            <span style="flex: 1;">${this.formatCategory(cat)}</span>
-                            ${!this.defaultCategories.includes(cat) ? `
-                                <button class="btn btn-danger btn-sm" onclick="Products.deleteCategory('${cat}')">🗑️</button>
-                            ` : '<span style="color: var(--text-secondary); font-size: 0.8rem;">(default)</span>'}
-                        </div>
-                    `).join('')}
+                <div style="margin-bottom: 16px;">
+                    <p style="color: var(--text-secondary); margin-bottom: 12px;">
+                        These 13 categories are synchronized with breadhub.shop website.
+                    </p>
+                    ${catList}
                 </div>
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="newCategoryInput" class="form-input" placeholder="New category name..." style="flex: 1;">
-                    <button class="btn btn-primary" onclick="Products.addCategory()">+ Add</button>
+                <div style="background: #E8F5E9; padding: 12px; border-radius: 8px;">
+                    <strong>✅ Categories are synced!</strong><br>
+                    <small>Both ProofMaster and Website use the same category system.</small>
                 </div>
             `,
             showFooter: false,
@@ -142,59 +303,261 @@ const Products = {
         });
     },
     
-    async addCategory() {
-        const input = document.getElementById('newCategoryInput');
-        const value = input?.value.trim();
+    // ========== SYNC MODAL ==========
+    async showSyncModal() {
+        await this.loadShopProducts();
         
-        if (!value) {
-            Toast.error('Please enter a category name');
-            return;
+        // Analyze sync status
+        let linked = 0;
+        let unlinked = 0;
+        let priceMismatch = 0;
+        const unlinkedProducts = [];
+        const mismatchProducts = [];
+        
+        for (const product of this.data) {
+            const shopProduct = this.getLinkedShopProduct(product.id);
+            if (shopProduct) {
+                linked++;
+                if (Math.abs((shopProduct.price || 0) - (product.finalSRP || 0)) >= 0.01) {
+                    priceMismatch++;
+                    mismatchProducts.push({ pm: product, shop: shopProduct });
+                }
+            } else {
+                unlinked++;
+                // Try to find by name
+                const byName = this.findShopProductByName(product.name);
+                unlinkedProducts.push({ pm: product, possibleMatch: byName });
+            }
         }
         
-        // Convert to slug format
-        const slug = value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        Modal.open({
+            title: '🔄 Website Sync Status',
+            content: `
+                <div style="padding: 8px 0;">
+                    <!-- Summary -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+                        <div style="background: #D4EDDA; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--success);">${linked}</div>
+                            <div style="font-size: 0.85rem;">Linked</div>
+                        </div>
+                        <div style="background: #FFF3CD; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #856404;">${unlinked}</div>
+                            <div style="font-size: 0.85rem;">Not Linked</div>
+                        </div>
+                        <div style="background: #F8D7DA; padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--danger);">${priceMismatch}</div>
+                            <div style="font-size: 0.85rem;">Price Mismatch</div>
+                        </div>
+                    </div>
+                    
+                    ${unlinked > 0 ? `
+                        <h4 style="margin-bottom: 12px;">⚠️ Unlinked Products (${unlinked})</h4>
+                        <div style="max-height: 200px; overflow-y: auto; margin-bottom: 16px;">
+                            ${unlinkedProducts.map(({ pm, possibleMatch }) => `
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 4px;">
+                                    <span>${pm.name}</span>
+                                    ${possibleMatch ? `
+                                        <span style="color: var(--success); font-size: 0.85rem;">🔗 Match found</span>
+                                    ` : `
+                                        <span style="color: var(--text-secondary); font-size: 0.85rem;">New</span>
+                                    `}
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                    
+                    ${priceMismatch > 0 ? `
+                        <h4 style="margin-bottom: 12px;">💰 Price Mismatches (${priceMismatch})</h4>
+                        <div style="max-height: 150px; overflow-y: auto; margin-bottom: 16px;">
+                            ${mismatchProducts.map(({ pm, shop }) => `
+                                <div style="padding: 8px; background: #FFF3CD; border-radius: 6px; margin-bottom: 4px;">
+                                    <strong>${pm.name}</strong><br>
+                                    <small>ProofMaster: ₱${pm.finalSRP} → Website: ₱${shop.price}</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                    
+                    <div style="display: flex; gap: 8px; margin-top: 16px;">
+                        <button class="btn btn-primary" onclick="Products.runFullSync()" style="flex: 1;">
+                            🚀 Run Full Sync
+                        </button>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 12px; text-align: center;">
+                        This will link products by name and sync all prices from ProofMaster → Website
+                    </p>
+                </div>
+            `,
+            showFooter: false,
+            width: '550px'
+        });
+    },
+    
+    // ========== FULL SYNC ==========
+    async runFullSync() {
+        Modal.close();
+        Toast.info('Starting sync...');
         
-        if (this.categories.includes(slug)) {
-            Toast.error('Category already exists');
-            return;
-        }
+        let linked = 0;
+        let created = 0;
+        let pricesUpdated = 0;
+        let errors = 0;
         
         try {
-            await DB.add('productCategories', { value: slug, label: value });
-            this.categories.push(slug);
-            Toast.success('Category added!');
-            this.showCategoriesModal(); // Refresh modal
+            await this.loadShopProducts();
+            
+            for (const product of this.data) {
+                try {
+                    // Check if already linked
+                    let shopProduct = this.getLinkedShopProduct(product.id);
+                    
+                    if (!shopProduct) {
+                        // Try to find by name and link
+                        shopProduct = this.findShopProductByName(product.name);
+                        
+                        if (shopProduct) {
+                            // Link existing shop product
+                            await DB.update('shopProducts', shopProduct.id, {
+                                proofmasterProductId: product.id
+                            });
+                            await DB.update('products', product.id, {
+                                shopProductId: shopProduct.id,
+                                lastSyncedAt: new Date().toISOString()
+                            });
+                            shopProduct.proofmasterProductId = product.id;
+                            product.shopProductId = shopProduct.id;
+                            linked++;
+                        } else {
+                            // Create new shop product
+                            const newShopProductId = await this.createShopProduct(product);
+                            if (newShopProductId) {
+                                await DB.update('products', product.id, {
+                                    shopProductId: newShopProductId,
+                                    lastSyncedAt: new Date().toISOString()
+                                });
+                                product.shopProductId = newShopProductId;
+                                created++;
+                            }
+                        }
+                    }
+                    
+                    // Sync price if linked
+                    if (shopProduct || product.shopProductId) {
+                        const shopId = shopProduct?.id || product.shopProductId;
+                        const currentShop = this.shopProducts.find(sp => sp.id === shopId);
+                        
+                        if (currentShop && Math.abs((currentShop.price || 0) - (product.finalSRP || 0)) >= 0.01) {
+                            await DB.update('shopProducts', shopId, {
+                                price: product.finalSRP
+                            });
+                            pricesUpdated++;
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error syncing ${product.name}:`, err);
+                    errors++;
+                }
+            }
+            
+            // Reload data
+            await this.loadShopProducts();
+            await this.load();
+            this.render();
+            
+            Toast.success(`Sync complete! Linked: ${linked}, Created: ${created}, Prices updated: ${pricesUpdated}${errors > 0 ? `, Errors: ${errors}` : ''}`);
+            
         } catch (error) {
-            console.error('Error adding category:', error);
-            Toast.error('Failed to add category');
+            console.error('Sync error:', error);
+            Toast.error('Sync failed: ' + error.message);
         }
     },
     
-    async deleteCategory(slug) {
-        if (!confirm(`Delete category "${this.formatCategory(slug)}"?`)) return;
-        
-        // Check if any products use this category
-        const productsUsing = this.data.filter(p => p.category === slug);
-        if (productsUsing.length > 0) {
-            Toast.error(`Cannot delete: ${productsUsing.length} product(s) use this category`);
-            return;
-        }
-        
+    // Create a new shop product from ProofMaster product
+    async createShopProduct(product) {
         try {
-            const allCats = await DB.getAll('productCategories');
-            const catToDelete = allCats.find(c => c.value === slug);
-            if (catToDelete) {
-                await DB.delete('productCategories', catToDelete.id);
-            }
-            this.categories = this.categories.filter(c => c !== slug);
-            Toast.success('Category deleted');
-            this.showCategoriesModal();
+            const shopData = {
+                name: product.name,
+                price: product.finalSRP || 0,
+                category: product.category,
+                description: '',
+                fullDescription: '',
+                isActive: true,
+                proofmasterProductId: product.id,
+                hasVariants: false,
+                variants: [],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            const docRef = await db.collection('shopProducts').add(shopData);
+            
+            // Add to local cache
+            this.shopProducts.push({ id: docRef.id, ...shopData });
+            
+            return docRef.id;
         } catch (error) {
-            console.error('Error deleting category:', error);
-            Toast.error('Failed to delete category');
+            console.error('Error creating shop product:', error);
+            return null;
         }
     },
 
+
+    // ========== SYNC TO WEBSITE ON SAVE ==========
+    async syncToWebsite(productId, productData) {
+        try {
+            const product = { id: productId, ...productData };
+            let shopProduct = this.getLinkedShopProduct(productId);
+            
+            if (!shopProduct && productData.shopProductId) {
+                shopProduct = this.shopProducts.find(sp => sp.id === productData.shopProductId);
+            }
+            
+            if (shopProduct) {
+                // Update existing shop product
+                await DB.update('shopProducts', shopProduct.id, {
+                    name: productData.name,
+                    price: productData.finalSRP,
+                    category: productData.category
+                });
+                console.log(`Synced price ₱${productData.finalSRP} to website for ${productData.name}`);
+            } else {
+                // Create new shop product
+                const newId = await this.createShopProduct(product);
+                if (newId) {
+                    await DB.update('products', productId, { shopProductId: newId });
+                    productData.shopProductId = newId;
+                    console.log(`Created new shop product for ${productData.name}`);
+                }
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error syncing to website:', error);
+            return false;
+        }
+    },
+    
+    // ========== LAUNCH WEBSITE ADMIN ==========
+    launchWebsiteAdmin(product) {
+        // Build URL with pre-populated data
+        const params = new URLSearchParams({
+            prefill: 'true',
+            name: product.name,
+            price: product.finalSRP || 0,
+            category: product.category || '',
+            proofmasterId: product.id
+        });
+        
+        // Get the website admin URL - adjust path as needed
+        const adminUrl = `../BreadHub-Website/admin.html?${params.toString()}`;
+        
+        // Open in new tab
+        window.open(adminUrl, '_blank');
+        
+        Toast.info('Opening Website Admin...');
+    },
+    
+    // ========== FORM HTML ==========
     showAddModal() {
         this.fillingCounter = 0;
         this.toppingCounter = 0;
@@ -246,6 +609,10 @@ const Products = {
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
         
+        // Sync status for existing products
+        const linkedShop = product.id ? this.getLinkedShopProduct(product.id) : null;
+        const syncStatus = product.id ? this.getSyncStatus(product, linkedShop) : null;
+        
         return `
             <form id="productForm">
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
@@ -258,8 +625,8 @@ const Products = {
                     <div class="form-group">
                         <label>Category</label>
                         <select name="category" class="form-select">
-                            ${this.categories.map(cat => 
-                                `<option value="${cat}" ${product.category === cat ? 'selected' : ''}>${this.formatCategory(cat)}</option>`
+                            ${this.defaultCategories.map(cat => 
+                                `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
                             ).join('')}
                         </select>
                     </div>
@@ -439,6 +806,41 @@ const Products = {
                     </div>
                 </div>
                 
+                <!-- WEBSITE INTEGRATION SECTION -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; color: white;">
+                    <h4 style="margin: 0 0 12px; color: white;">🌐 Website Integration (breadhub.shop)</h4>
+                    
+                    ${syncStatus ? `
+                        <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.2rem;">${syncStatus.icon}</span>
+                                <span>${syncStatus.text}</span>
+                            </div>
+                            ${linkedShop ? `<small style="opacity: 0.8;">Shop Product ID: ${linkedShop.id}</small>` : ''}
+                        </div>
+                    ` : `
+                        <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                            <span>✨ New product will be automatically created on website when saved.</span>
+                        </div>
+                    `}
+                    
+                    <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 12px;">
+                        When you save, the price will automatically sync to the website. 
+                        Use the button below to add descriptions, images, and SEO content.
+                    </p>
+                    
+                    ${product.id ? `
+                        <button type="button" class="btn" onclick="Products.launchWebsiteAdmin(Products.getById('${product.id}'))" 
+                                style="background: white; color: #764ba2; font-weight: bold; width: 100%;">
+                            🚀 Launch Website Admin (Add Images, SEO, Description)
+                        </button>
+                    ` : `
+                        <p style="font-size: 0.85rem; opacity: 0.8; text-align: center;">
+                            Save the product first, then you can launch Website Admin.
+                        </p>
+                    `}
+                </div>
+                
                 <div class="form-group">
                     <label>Notes</label>
                     <textarea name="notes" class="form-textarea" placeholder="Production notes, tips, etc.">${product.notes || ''}</textarea>
@@ -446,6 +848,7 @@ const Products = {
             </form>
         `;
     },
+
 
     getFillingRowHTML(idx, filling = {}) {
         const options = Fillings.data.map(f => 
@@ -630,6 +1033,7 @@ const Products = {
         }
     },
 
+
     getViewHTML(product) {
         const cost = this.calculateProductCost(product);
         const dough = Doughs.getById(product.doughRecipeId);
@@ -639,11 +1043,15 @@ const Products = {
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
         
+        // Sync status
+        const linkedShop = this.getLinkedShopProduct(product.id);
+        const syncStatus = this.getSyncStatus(product, linkedShop);
+        
         return `
             <div style="padding: 16px 0;">
                 <div class="recipe-stat">
                     <span>Category:</span>
-                    <span>${this.formatCategory(product.category)}</span>
+                    <span>${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 
                 <h4 style="margin: 16px 0 8px;">Recipe Components</h4>
@@ -734,7 +1142,7 @@ const Products = {
                         <span>${Utils.formatCurrency(cost.suggestedSRP)}</span>
                     </div>
                     <div class="recipe-stat" style="font-size: 1.2rem; background: var(--primary-light); padding: 12px; border-radius: 8px; margin-top: 8px;">
-                        <span><strong>Final SRP (Loyverse):</strong></span>
+                        <span><strong>Final SRP:</strong></span>
                         <span style="color: var(--primary-dark);"><strong>${Utils.formatCurrency(product.finalSRP || 0)}</strong></span>
                     </div>
                     <div class="recipe-stat" style="margin-top: 8px;">
@@ -749,6 +1157,30 @@ const Products = {
                             ${Utils.formatCurrency((product.finalSRP || 0) - cost.totalCost)}
                         </span>
                     </div>
+                </div>
+                
+                <!-- Website Integration Section -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; margin: 16px 0; color: white;">
+                    <h4 style="margin: 0 0 12px; color: white;">🌐 Website Status</h4>
+                    
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.3rem;">${syncStatus.icon}</span>
+                        <span style="font-size: 1.1rem;">${syncStatus.text}</span>
+                    </div>
+                    
+                    ${linkedShop ? `
+                        <div style="background: rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem;">
+                            <div>Shop Price: <strong>₱${linkedShop.price || 0}</strong></div>
+                            <div>Active: ${linkedShop.isActive ? '✅ Yes' : '❌ No'}</div>
+                            ${linkedShop.description ? `<div>Description: ✅ Set</div>` : `<div>Description: ⚠️ Missing</div>`}
+                            ${linkedShop.imageUrl ? `<div>Image: ✅ Set</div>` : `<div>Image: ⚠️ Missing</div>`}
+                        </div>
+                    ` : ''}
+                    
+                    <button class="btn" onclick="Products.launchWebsiteAdmin(Products.getById('${product.id}'))" 
+                            style="background: white; color: #764ba2; font-weight: bold; width: 100%;">
+                        🚀 Launch Website Admin
+                    </button>
                 </div>
                 
                 ${product.notes ? `
@@ -814,6 +1246,7 @@ const Products = {
             suggestedSRP
         };
     },
+
 
     async save(id = null) {
         const form = document.getElementById('productForm');
@@ -884,17 +1317,36 @@ const Products = {
         }
         
         try {
+            let productId = id;
+            
             if (id) {
                 await DB.update('products', id, data);
                 Toast.success('Product updated');
             } else {
-                await DB.add('products', data);
+                productId = await DB.add('products', data);
                 Toast.success('Product created');
             }
             
+            // Auto-sync to website
+            await this.syncToWebsite(productId, data);
+            
             Modal.close();
             await this.load();
+            await this.loadShopProducts();
             this.render();
+            
+            // Show option to launch website admin for new products
+            if (!id) {
+                setTimeout(() => {
+                    if (confirm('Product created and synced to website!\n\nWould you like to launch Website Admin to add images and SEO description?')) {
+                        const newProduct = this.data.find(p => p.id === productId);
+                        if (newProduct) {
+                            this.launchWebsiteAdmin(newProduct);
+                        }
+                    }
+                }, 500);
+            }
+            
         } catch (error) {
             console.error('Error saving product:', error);
             Toast.error('Failed to save product');
@@ -902,7 +1354,17 @@ const Products = {
     },
     
     async delete(id) {
-        if (!confirm('Delete this product?')) return;
+        const product = this.data.find(p => p.id === id);
+        if (!product) return;
+        
+        const linkedShop = this.getLinkedShopProduct(id);
+        let confirmMsg = `Delete "${product.name}"?`;
+        
+        if (linkedShop) {
+            confirmMsg += `\n\nThis product is linked to the website. The website product will NOT be deleted automatically.`;
+        }
+        
+        if (!confirm(confirmMsg)) return;
         
         try {
             await DB.delete('products', id);
