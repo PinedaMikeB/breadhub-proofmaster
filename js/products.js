@@ -143,29 +143,7 @@ const Products = {
         const grid = document.getElementById('productsGrid');
         if (!grid) return;
         
-        // Add header buttons
-        const header = document.querySelector('#productsView .view-header');
-        if (header) {
-            // Category button
-            if (!header.querySelector('.manage-categories-btn')) {
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-secondary manage-categories-btn';
-                btn.innerHTML = '🏷️ Categories';
-                btn.style.marginLeft = '8px';
-                btn.onclick = () => this.showCategoriesModal();
-                header.querySelector('.btn-primary')?.after(btn);
-            }
-            
-            // Sync button
-            if (!header.querySelector('.sync-shop-btn')) {
-                const syncBtn = document.createElement('button');
-                syncBtn.className = 'btn btn-secondary sync-shop-btn';
-                syncBtn.innerHTML = '🔄 Sync All';
-                syncBtn.style.marginLeft = '8px';
-                syncBtn.onclick = () => this.showSyncModal();
-                header.querySelector('.manage-categories-btn')?.after(syncBtn);
-            }
-        }
+        // Buttons are now in HTML, no need to add dynamically
         
         if (this.data.length === 0) {
             grid.innerHTML = `
@@ -301,6 +279,150 @@ const Products = {
             showFooter: false,
             width: '500px'
         });
+    },
+    
+    // ========== LINK TO WEBSITE PRODUCT MODAL ==========
+    async showLinkModal(productId) {
+        const product = this.data.find(p => p.id === productId);
+        if (!product) return;
+        
+        await this.loadShopProducts();
+        
+        // Find unlinked shop products (those without proofmasterProductId)
+        const unlinkedShopProducts = this.shopProducts.filter(sp => !sp.proofmasterProductId);
+        
+        if (unlinkedShopProducts.length === 0) {
+            Modal.open({
+                title: '🔗 Link to Website Product',
+                content: `
+                    <div style="padding: 16px; text-align: center;">
+                        <p>No unlinked website products found.</p>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                            All website products are already linked to ProofMaster products.
+                        </p>
+                    </div>
+                `,
+                showFooter: false,
+                width: '450px'
+            });
+            return;
+        }
+        
+        // Sort: matching names first, then alphabetically
+        const productNameLower = product.name.toLowerCase().trim();
+        const sortedProducts = [...unlinkedShopProducts].sort((a, b) => {
+            const aName = a.name.toLowerCase().trim();
+            const bName = b.name.toLowerCase().trim();
+            const aMatch = aName.includes(productNameLower) || productNameLower.includes(aName);
+            const bMatch = bName.includes(productNameLower) || productNameLower.includes(bName);
+            
+            if (aMatch && !bMatch) return -1;
+            if (!aMatch && bMatch) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        
+        // Store for filtering
+        window._linkModalProducts = sortedProducts;
+        window._linkModalProductId = productId;
+        
+        Modal.open({
+            title: `🔗 Link "${product.name}" to Website`,
+            content: `
+                <div style="padding: 8px 0;">
+                    <div style="margin-bottom: 12px;">
+                        <input type="text" id="linkSearchInput" class="form-input" 
+                               placeholder="🔍 Search website products..." 
+                               oninput="Products.filterLinkModal(this.value)"
+                               style="width: 100%;">
+                    </div>
+                    <p style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">
+                        Showing ${sortedProducts.length} unlinked website products:
+                    </p>
+                    <div id="linkProductsList" style="max-height: 400px; overflow-y: auto;">
+                        ${this.renderLinkProductsList(sortedProducts, productId, productNameLower)}
+                    </div>
+                </div>
+            `,
+            showFooter: false,
+            width: '500px'
+        });
+        
+        // Focus search input
+        setTimeout(() => document.getElementById('linkSearchInput')?.focus(), 100);
+    },
+    
+    // Render the list of products for linking
+    renderLinkProductsList(products, productId, highlightName = '') {
+        if (products.length === 0) {
+            return '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">No matching products found</p>';
+        }
+        
+        return products.map(sp => {
+            const spNameLower = sp.name.toLowerCase().trim();
+            const isMatch = highlightName && (spNameLower.includes(highlightName) || highlightName.includes(spNameLower));
+            
+            return `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: ${isMatch ? '#E8F5E9' : 'var(--bg-input)'}; border-radius: 8px; margin-bottom: 8px; ${isMatch ? 'border: 2px solid var(--success);' : ''}">
+                    <div>
+                        <strong>${sp.name}</strong>
+                        ${isMatch ? '<span style="color: var(--success); font-size: 0.8rem; margin-left: 8px;">⭐ Name match!</span>' : ''}
+                        <br>
+                        <small style="color: var(--text-secondary);">₱${sp.price || 0} • ${sp.category || 'No category'}</small>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="Products.linkToShopProduct('${productId}', '${sp.id}')">
+                        Link
+                    </button>
+                </div>
+            `;
+        }).join('');
+    },
+    
+    // Filter the link modal list
+    filterLinkModal(searchTerm) {
+        const products = window._linkModalProducts || [];
+        const productId = window._linkModalProductId;
+        const product = this.data.find(p => p.id === productId);
+        const productNameLower = product?.name.toLowerCase().trim() || '';
+        
+        const filtered = searchTerm.trim() 
+            ? products.filter(sp => sp.name.toLowerCase().includes(searchTerm.toLowerCase()))
+            : products;
+        
+        const listContainer = document.getElementById('linkProductsList');
+        if (listContainer) {
+            listContainer.innerHTML = this.renderLinkProductsList(filtered, productId, productNameLower);
+        }
+    },
+    
+    // Link ProofMaster product to Shop product
+    async linkToShopProduct(productId, shopProductId) {
+        try {
+            // Update both records
+            await DB.update('shopProducts', shopProductId, {
+                proofmasterProductId: productId
+            });
+            await DB.update('products', productId, {
+                shopProductId: shopProductId,
+                lastSyncedAt: new Date().toISOString()
+            });
+            
+            // Update local data
+            const product = this.data.find(p => p.id === productId);
+            if (product) product.shopProductId = shopProductId;
+            
+            const shopProduct = this.shopProducts.find(sp => sp.id === shopProductId);
+            if (shopProduct) shopProduct.proofmasterProductId = productId;
+            
+            Modal.close();
+            Toast.success(`Linked successfully! You can now sync prices.`);
+            
+            // Refresh the edit modal
+            this.edit(productId);
+            
+        } catch (error) {
+            console.error('Error linking products:', error);
+            Toast.error('Failed to link products');
+        }
     },
     
     // ========== SYNC MODAL ==========
@@ -503,34 +625,33 @@ const Products = {
 
 
     // ========== SYNC TO WEBSITE ON SAVE ==========
+    // Only syncs if product is ALREADY linked - does NOT create or auto-link
     async syncToWebsite(productId, productData) {
         try {
-            const product = { id: productId, ...productData };
+            // Reload shop products to ensure we have latest data
+            await this.loadShopProducts();
+            
+            // Find by existing link (proofmasterProductId)
             let shopProduct = this.getLinkedShopProduct(productId);
             
+            // Also check by shopProductId stored in product
             if (!shopProduct && productData.shopProductId) {
                 shopProduct = this.shopProducts.find(sp => sp.id === productData.shopProductId);
             }
             
             if (shopProduct) {
-                // Update existing shop product
+                // Update existing shop product price
                 await DB.update('shopProducts', shopProduct.id, {
-                    name: productData.name,
                     price: productData.finalSRP,
-                    category: productData.category
+                    updatedAt: new Date().toISOString()
                 });
                 console.log(`Synced price ₱${productData.finalSRP} to website for ${productData.name}`);
+                return true;
             } else {
-                // Create new shop product
-                const newId = await this.createShopProduct(product);
-                if (newId) {
-                    await DB.update('products', productId, { shopProductId: newId });
-                    productData.shopProductId = newId;
-                    console.log(`Created new shop product for ${productData.name}`);
-                }
+                // Not linked - don't create or auto-link
+                console.log(`Product "${productData.name}" is not linked to website. Skipping sync.`);
+                return false;
             }
-            
-            return true;
         } catch (error) {
             console.error('Error syncing to website:', error);
             return false;
@@ -810,35 +931,56 @@ const Products = {
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; color: white;">
                     <h4 style="margin: 0 0 12px; color: white;">🌐 Website Integration (breadhub.shop)</h4>
                     
-                    ${syncStatus ? `
+                    ${product.id ? `
+                        <!-- Sync Status -->
                         <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 1.2rem;">${syncStatus.icon}</span>
-                                <span>${syncStatus.text}</span>
-                            </div>
-                            ${linkedShop ? `<small style="opacity: 0.8;">Shop Product ID: ${linkedShop.id}</small>` : ''}
+                            ${linkedShop ? `
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <span style="font-size: 1.2rem;">✅</span>
+                                    <span><strong>Linked</strong> to website product</span>
+                                </div>
+                                <small style="opacity: 0.8;">Shop ID: ${linkedShop.id}</small><br>
+                                <small style="opacity: 0.8;">Shop Price: ₱${linkedShop.price || 0}</small>
+                            ` : `
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <span style="font-size: 1.2rem;">⚠️</span>
+                                    <span><strong>Not linked</strong> to any website product</span>
+                                </div>
+                                <button type="button" class="btn btn-sm" onclick="Products.showLinkModal('${product.id}')" 
+                                        style="background: white; color: #764ba2; margin-top: 8px;">
+                                    🔗 Link to Existing Website Product
+                                </button>
+                            `}
+                        </div>
+                        
+                        <!-- Auto-sync checkbox -->
+                        <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" name="autoSyncWebsite" id="autoSyncWebsite" 
+                                       ${product.autoSyncWebsite !== false ? 'checked' : ''}
+                                       style="width: 20px; height: 20px; cursor: pointer;">
+                                <span style="font-size: 1rem;">
+                                    <strong>Auto-sync price to website</strong><br>
+                                    <small style="opacity: 0.8;">When enabled, saving will update the website price</small>
+                                </span>
+                            </label>
                         </div>
                     ` : `
                         <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                            <span>✨ New product will be automatically created on website when saved.</span>
+                            <span>💡 Save the product first to enable website linking.</span>
                         </div>
                     `}
                     
-                    <p style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 12px;">
-                        When you save, the price will automatically sync to the website. 
-                        Use the button below to add descriptions, images, and SEO content.
-                    </p>
-                    
-                    ${product.id ? `
+                    ${product.id && linkedShop ? `
                         <button type="button" class="btn" onclick="Products.launchWebsiteAdmin(Products.getById('${product.id}'))" 
                                 style="background: white; color: #764ba2; font-weight: bold; width: 100%;">
                             🚀 Launch Website Admin (Add Images, SEO, Description)
                         </button>
-                    ` : `
+                    ` : product.id ? `
                         <p style="font-size: 0.85rem; opacity: 0.8; text-align: center;">
-                            Save the product first, then you can launch Website Admin.
+                            Link to a website product first, then you can launch Website Admin.
                         </p>
-                    `}
+                    ` : ''}
                 </div>
                 
                 <div class="form-group">
@@ -1303,6 +1445,7 @@ const Products = {
                 markupPercent: parseFloat(formData.get('markupPercent')) || 40
             },
             finalSRP: parseFloat(formData.get('finalSRP')) || 0,
+            autoSyncWebsite: document.getElementById('autoSyncWebsite')?.checked !== false,
             notes: formData.get('notes') || ''
         };
 
@@ -1327,25 +1470,19 @@ const Products = {
                 Toast.success('Product created');
             }
             
-            // Auto-sync to website
-            await this.syncToWebsite(productId, data);
+            // Only sync to website if auto-sync is enabled AND product is already linked
+            const existingProduct = id ? this.data.find(p => p.id === id) : null;
+            const isLinked = existingProduct?.shopProductId || this.getLinkedShopProduct(productId);
+            
+            if (data.autoSyncWebsite && isLinked) {
+                await this.syncToWebsite(productId, data);
+                Toast.info('Price synced to website');
+            }
             
             Modal.close();
             await this.load();
             await this.loadShopProducts();
             this.render();
-            
-            // Show option to launch website admin for new products
-            if (!id) {
-                setTimeout(() => {
-                    if (confirm('Product created and synced to website!\n\nWould you like to launch Website Admin to add images and SEO description?')) {
-                        const newProduct = this.data.find(p => p.id === productId);
-                        if (newProduct) {
-                            this.launchWebsiteAdmin(newProduct);
-                        }
-                    }
-                }, 500);
-            }
             
         } catch (error) {
             console.error('Error saving product:', error);
