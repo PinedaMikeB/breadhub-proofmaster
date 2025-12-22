@@ -3,16 +3,15 @@
  * Handles product assembly combining dough + multiple toppings + multiple fillings
  * With full cost breakdown and SRP calculation
  * 
- * ✅ INTEGRATED with BreadHub.shop Website
- * - Two-way sync with shopProducts collection
- * - Auto-creates shop product on save
- * - Launch Website Admin button
+ * ✅ UNIFIED SCHEMA - Single 'products' collection
+ * - Recipe data (dough, fillings, toppings, costs)
+ * - Shop data (images, description, published status)
+ * - Single source of truth for pricing
  */
 
 const Products = {
     data: [],
     categories: [],
-    shopProducts: [], // Cache of website products for linking
     
     // Unified categories (synced with website)
     defaultCategories: [
@@ -47,7 +46,6 @@ const Products = {
     async init() {
         await this.loadCategories();
         await this.load();
-        await this.loadShopProducts();
         this.render();
     },
     
@@ -116,29 +114,6 @@ const Products = {
         }
     },
     
-    // Load shop products for linking
-    async loadShopProducts() {
-        try {
-            this.shopProducts = await DB.getAll('shopProducts');
-        } catch (error) {
-            console.error('Error loading shop products:', error);
-            this.shopProducts = [];
-        }
-    },
-    
-    // Find linked shop product
-    getLinkedShopProduct(productId) {
-        return this.shopProducts.find(sp => sp.proofmasterProductId === productId);
-    },
-    
-    // Find shop product by name (for initial auto-linking)
-    findShopProductByName(name) {
-        const normalizedName = name.toLowerCase().trim();
-        return this.shopProducts.find(sp => 
-            sp.name.toLowerCase().trim() === normalizedName
-        );
-    },
-    
     render() {
         const grid = document.getElementById('productsGrid');
         if (!grid) return;
@@ -160,9 +135,8 @@ const Products = {
                 ? ((product.finalSRP - cost.totalCost) / product.finalSRP * 100) 
                 : 0;
             
-            // Check sync status
-            const linkedShop = this.getLinkedShopProduct(product.id);
-            const syncStatus = this.getSyncStatus(product, linkedShop);
+            // Get website status from unified schema
+            const shopStatus = this.getShopStatus(product);
             
             return `
             <div class="recipe-card" data-id="${product.id}">
@@ -190,10 +164,10 @@ const Products = {
                         </span>
                     </div>
                     
-                    <!-- Website Sync Status -->
-                    <div class="recipe-stat" style="background: ${syncStatus.color}; padding: 6px 8px; border-radius: 6px; margin-top: 8px;">
-                        <span style="font-size: 0.85rem;">${syncStatus.icon} Website:</span>
-                        <span style="font-size: 0.85rem; font-weight: 500;">${syncStatus.text}</span>
+                    <!-- Website Status -->
+                    <div class="recipe-stat" style="background: ${shopStatus.color}; padding: 6px 8px; border-radius: 6px; margin-top: 8px;">
+                        <span style="font-size: 0.85rem;">${shopStatus.icon} Website:</span>
+                        <span style="font-size: 0.85rem; font-weight: 500;">${shopStatus.text}</span>
                     </div>
                 </div>
                 <div class="recipe-card-actions">
@@ -205,29 +179,38 @@ const Products = {
         `}).join('');
     },
     
-    getSyncStatus(product, linkedShop) {
-        if (!linkedShop) {
+    // Get shop status from unified product schema
+    getShopStatus(product) {
+        const shop = product.shop;
+        
+        if (!shop) {
             return {
                 icon: '⚠️',
-                text: 'Not linked',
+                text: 'Not configured',
                 color: '#FFF3CD'
             };
         }
         
-        // Check if prices match
-        const priceMatch = Math.abs((linkedShop.price || 0) - (product.finalSRP || 0)) < 0.01;
-        
-        if (priceMatch) {
-            return {
-                icon: '✅',
-                text: `Synced (₱${product.finalSRP})`,
-                color: '#D4EDDA'
-            };
+        if (shop.isPublished) {
+            const hasImage = shop.imageUrl || (shop.images && shop.images.length > 0);
+            if (hasImage) {
+                return {
+                    icon: '✅',
+                    text: 'Published',
+                    color: '#D4EDDA'
+                };
+            } else {
+                return {
+                    icon: '🔶',
+                    text: 'Published (no image)',
+                    color: '#FFF3CD'
+                };
+            }
         } else {
             return {
-                icon: '🔄',
-                text: `Price mismatch (Shop: ₱${linkedShop.price})`,
-                color: '#F8D7DA'
+                icon: '📝',
+                text: 'Draft',
+                color: '#E3F2FD'
             };
         }
     },
@@ -281,395 +264,14 @@ const Products = {
         });
     },
     
-    // ========== LINK TO WEBSITE PRODUCT MODAL ==========
-    async showLinkModal(productId) {
-        const product = this.data.find(p => p.id === productId);
-        if (!product) return;
-        
-        await this.loadShopProducts();
-        
-        // Find unlinked shop products (those without proofmasterProductId)
-        const unlinkedShopProducts = this.shopProducts.filter(sp => !sp.proofmasterProductId);
-        
-        if (unlinkedShopProducts.length === 0) {
-            Modal.open({
-                title: '🔗 Link to Website Product',
-                content: `
-                    <div style="padding: 16px; text-align: center;">
-                        <p>No unlinked website products found.</p>
-                        <p style="color: var(--text-secondary); font-size: 0.9rem;">
-                            All website products are already linked to ProofMaster products.
-                        </p>
-                    </div>
-                `,
-                showFooter: false,
-                width: '450px'
-            });
-            return;
-        }
-        
-        // Sort: matching names first, then alphabetically
-        const productNameLower = product.name.toLowerCase().trim();
-        const sortedProducts = [...unlinkedShopProducts].sort((a, b) => {
-            const aName = a.name.toLowerCase().trim();
-            const bName = b.name.toLowerCase().trim();
-            const aMatch = aName.includes(productNameLower) || productNameLower.includes(aName);
-            const bMatch = bName.includes(productNameLower) || productNameLower.includes(bName);
-            
-            if (aMatch && !bMatch) return -1;
-            if (!aMatch && bMatch) return 1;
-            return a.name.localeCompare(b.name);
-        });
-        
-        // Store for filtering
-        window._linkModalProducts = sortedProducts;
-        window._linkModalProductId = productId;
-        
-        Modal.open({
-            title: `🔗 Link "${product.name}" to Website`,
-            content: `
-                <div style="padding: 8px 0;">
-                    <div style="margin-bottom: 12px;">
-                        <input type="text" id="linkSearchInput" class="form-input" 
-                               placeholder="🔍 Search website products..." 
-                               oninput="Products.filterLinkModal(this.value)"
-                               style="width: 100%;">
-                    </div>
-                    <p style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">
-                        Showing ${sortedProducts.length} unlinked website products:
-                    </p>
-                    <div id="linkProductsList" style="max-height: 400px; overflow-y: auto;">
-                        ${this.renderLinkProductsList(sortedProducts, productId, productNameLower)}
-                    </div>
-                </div>
-            `,
-            showFooter: false,
-            width: '500px'
-        });
-        
-        // Focus search input
-        setTimeout(() => document.getElementById('linkSearchInput')?.focus(), 100);
-    },
-    
-    // Render the list of products for linking
-    renderLinkProductsList(products, productId, highlightName = '') {
-        if (products.length === 0) {
-            return '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">No matching products found</p>';
-        }
-        
-        return products.map(sp => {
-            const spNameLower = sp.name.toLowerCase().trim();
-            const isMatch = highlightName && (spNameLower.includes(highlightName) || highlightName.includes(spNameLower));
-            
-            return `
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: ${isMatch ? '#E8F5E9' : 'var(--bg-input)'}; border-radius: 8px; margin-bottom: 8px; ${isMatch ? 'border: 2px solid var(--success);' : ''}">
-                    <div>
-                        <strong>${sp.name}</strong>
-                        ${isMatch ? '<span style="color: var(--success); font-size: 0.8rem; margin-left: 8px;">⭐ Name match!</span>' : ''}
-                        <br>
-                        <small style="color: var(--text-secondary);">₱${sp.price || 0} • ${sp.category || 'No category'}</small>
-                    </div>
-                    <button class="btn btn-primary btn-sm" onclick="Products.linkToShopProduct('${productId}', '${sp.id}')">
-                        Link
-                    </button>
-                </div>
-            `;
-        }).join('');
-    },
-    
-    // Filter the link modal list
-    filterLinkModal(searchTerm) {
-        const products = window._linkModalProducts || [];
-        const productId = window._linkModalProductId;
-        const product = this.data.find(p => p.id === productId);
-        const productNameLower = product?.name.toLowerCase().trim() || '';
-        
-        const filtered = searchTerm.trim() 
-            ? products.filter(sp => sp.name.toLowerCase().includes(searchTerm.toLowerCase()))
-            : products;
-        
-        const listContainer = document.getElementById('linkProductsList');
-        if (listContainer) {
-            listContainer.innerHTML = this.renderLinkProductsList(filtered, productId, productNameLower);
-        }
-    },
-    
-    // Link ProofMaster product to Shop product
-    async linkToShopProduct(productId, shopProductId) {
-        try {
-            // Update both records
-            await DB.update('shopProducts', shopProductId, {
-                proofmasterProductId: productId
-            });
-            await DB.update('products', productId, {
-                shopProductId: shopProductId,
-                lastSyncedAt: new Date().toISOString()
-            });
-            
-            // Update local data
-            const product = this.data.find(p => p.id === productId);
-            if (product) product.shopProductId = shopProductId;
-            
-            const shopProduct = this.shopProducts.find(sp => sp.id === shopProductId);
-            if (shopProduct) shopProduct.proofmasterProductId = productId;
-            
-            Modal.close();
-            Toast.success(`Linked successfully! You can now sync prices.`);
-            
-            // Refresh the edit modal
-            this.edit(productId);
-            
-        } catch (error) {
-            console.error('Error linking products:', error);
-            Toast.error('Failed to link products');
-        }
-    },
-    
-    // ========== SYNC MODAL ==========
-    async showSyncModal() {
-        await this.loadShopProducts();
-        
-        // Analyze sync status
-        let linked = 0;
-        let unlinked = 0;
-        let priceMismatch = 0;
-        const unlinkedProducts = [];
-        const mismatchProducts = [];
-        
-        for (const product of this.data) {
-            const shopProduct = this.getLinkedShopProduct(product.id);
-            if (shopProduct) {
-                linked++;
-                if (Math.abs((shopProduct.price || 0) - (product.finalSRP || 0)) >= 0.01) {
-                    priceMismatch++;
-                    mismatchProducts.push({ pm: product, shop: shopProduct });
-                }
-            } else {
-                unlinked++;
-                // Try to find by name
-                const byName = this.findShopProductByName(product.name);
-                unlinkedProducts.push({ pm: product, possibleMatch: byName });
-            }
-        }
-        
-        Modal.open({
-            title: '🔄 Website Sync Status',
-            content: `
-                <div style="padding: 8px 0;">
-                    <!-- Summary -->
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
-                        <div style="background: #D4EDDA; padding: 16px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 2rem; font-weight: bold; color: var(--success);">${linked}</div>
-                            <div style="font-size: 0.85rem;">Linked</div>
-                        </div>
-                        <div style="background: #FFF3CD; padding: 16px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 2rem; font-weight: bold; color: #856404;">${unlinked}</div>
-                            <div style="font-size: 0.85rem;">Not Linked</div>
-                        </div>
-                        <div style="background: #F8D7DA; padding: 16px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 2rem; font-weight: bold; color: var(--danger);">${priceMismatch}</div>
-                            <div style="font-size: 0.85rem;">Price Mismatch</div>
-                        </div>
-                    </div>
-                    
-                    ${unlinked > 0 ? `
-                        <h4 style="margin-bottom: 12px;">⚠️ Unlinked Products (${unlinked})</h4>
-                        <div style="max-height: 200px; overflow-y: auto; margin-bottom: 16px;">
-                            ${unlinkedProducts.map(({ pm, possibleMatch }) => `
-                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 4px;">
-                                    <span>${pm.name}</span>
-                                    ${possibleMatch ? `
-                                        <span style="color: var(--success); font-size: 0.85rem;">🔗 Match found</span>
-                                    ` : `
-                                        <span style="color: var(--text-secondary); font-size: 0.85rem;">New</span>
-                                    `}
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                    
-                    ${priceMismatch > 0 ? `
-                        <h4 style="margin-bottom: 12px;">💰 Price Mismatches (${priceMismatch})</h4>
-                        <div style="max-height: 150px; overflow-y: auto; margin-bottom: 16px;">
-                            ${mismatchProducts.map(({ pm, shop }) => `
-                                <div style="padding: 8px; background: #FFF3CD; border-radius: 6px; margin-bottom: 4px;">
-                                    <strong>${pm.name}</strong><br>
-                                    <small>ProofMaster: ₱${pm.finalSRP} → Website: ₱${shop.price}</small>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                    
-                    <div style="display: flex; gap: 8px; margin-top: 16px;">
-                        <button class="btn btn-primary" onclick="Products.runFullSync()" style="flex: 1;">
-                            🚀 Run Full Sync
-                        </button>
-                    </div>
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 12px; text-align: center;">
-                        This will link products by name and sync all prices from ProofMaster → Website
-                    </p>
-                </div>
-            `,
-            showFooter: false,
-            width: '550px'
-        });
-    },
-    
-    // ========== FULL SYNC ==========
-    async runFullSync() {
-        Modal.close();
-        Toast.info('Starting sync...');
-        
-        let linked = 0;
-        let created = 0;
-        let pricesUpdated = 0;
-        let errors = 0;
-        
-        try {
-            await this.loadShopProducts();
-            
-            for (const product of this.data) {
-                try {
-                    // Check if already linked
-                    let shopProduct = this.getLinkedShopProduct(product.id);
-                    
-                    if (!shopProduct) {
-                        // Try to find by name and link
-                        shopProduct = this.findShopProductByName(product.name);
-                        
-                        if (shopProduct) {
-                            // Link existing shop product
-                            await DB.update('shopProducts', shopProduct.id, {
-                                proofmasterProductId: product.id
-                            });
-                            await DB.update('products', product.id, {
-                                shopProductId: shopProduct.id,
-                                lastSyncedAt: new Date().toISOString()
-                            });
-                            shopProduct.proofmasterProductId = product.id;
-                            product.shopProductId = shopProduct.id;
-                            linked++;
-                        } else {
-                            // Create new shop product
-                            const newShopProductId = await this.createShopProduct(product);
-                            if (newShopProductId) {
-                                await DB.update('products', product.id, {
-                                    shopProductId: newShopProductId,
-                                    lastSyncedAt: new Date().toISOString()
-                                });
-                                product.shopProductId = newShopProductId;
-                                created++;
-                            }
-                        }
-                    }
-                    
-                    // Sync price if linked
-                    if (shopProduct || product.shopProductId) {
-                        const shopId = shopProduct?.id || product.shopProductId;
-                        const currentShop = this.shopProducts.find(sp => sp.id === shopId);
-                        
-                        if (currentShop && Math.abs((currentShop.price || 0) - (product.finalSRP || 0)) >= 0.01) {
-                            await DB.update('shopProducts', shopId, {
-                                price: product.finalSRP
-                            });
-                            pricesUpdated++;
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error syncing ${product.name}:`, err);
-                    errors++;
-                }
-            }
-            
-            // Reload data
-            await this.loadShopProducts();
-            await this.load();
-            this.render();
-            
-            Toast.success(`Sync complete! Linked: ${linked}, Created: ${created}, Prices updated: ${pricesUpdated}${errors > 0 ? `, Errors: ${errors}` : ''}`);
-            
-        } catch (error) {
-            console.error('Sync error:', error);
-            Toast.error('Sync failed: ' + error.message);
-        }
-    },
-    
-    // Create a new shop product from ProofMaster product
-    async createShopProduct(product) {
-        try {
-            const shopData = {
-                name: product.name,
-                price: product.finalSRP || 0,
-                category: product.category,
-                description: '',
-                fullDescription: '',
-                isActive: true,
-                proofmasterProductId: product.id,
-                hasVariants: false,
-                variants: [],
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            
-            const docRef = await db.collection('shopProducts').add(shopData);
-            
-            // Add to local cache
-            this.shopProducts.push({ id: docRef.id, ...shopData });
-            
-            return docRef.id;
-        } catch (error) {
-            console.error('Error creating shop product:', error);
-            return null;
-        }
-    },
-
-
-    // ========== SYNC TO WEBSITE ON SAVE ==========
-    // Only syncs if product is ALREADY linked - does NOT create or auto-link
-    async syncToWebsite(productId, productData) {
-        try {
-            // Reload shop products to ensure we have latest data
-            await this.loadShopProducts();
-            
-            // Find by existing link (proofmasterProductId)
-            let shopProduct = this.getLinkedShopProduct(productId);
-            
-            // Also check by shopProductId stored in product
-            if (!shopProduct && productData.shopProductId) {
-                shopProduct = this.shopProducts.find(sp => sp.id === productData.shopProductId);
-            }
-            
-            if (shopProduct) {
-                // Update existing shop product price
-                await DB.update('shopProducts', shopProduct.id, {
-                    price: productData.finalSRP,
-                    updatedAt: new Date().toISOString()
-                });
-                console.log(`Synced price ₱${productData.finalSRP} to website for ${productData.name}`);
-                return true;
-            } else {
-                // Not linked - don't create or auto-link
-                console.log(`Product "${productData.name}" is not linked to website. Skipping sync.`);
-                return false;
-            }
-        } catch (error) {
-            console.error('Error syncing to website:', error);
-            return false;
-        }
-    },
-    
     // ========== LAUNCH WEBSITE ADMIN ==========
     launchWebsiteAdmin(product) {
-        // Build URL with pre-populated data
+        // Build URL with product ID to edit in website admin
         const params = new URLSearchParams({
-            prefill: 'true',
-            name: product.name,
-            price: product.finalSRP || 0,
-            category: product.category || '',
-            proofmasterId: product.id
+            edit: product.id
         });
         
-        // Use breadhub.shop admin URL (works both locally and on Netlify)
+        // Use breadhub.shop admin URL
         const adminUrl = `https://breadhub.shop/admin.html?${params.toString()}`;
         
         // Open in new tab
@@ -729,10 +331,6 @@ const Products = {
         // Handle legacy single filling/topping OR new array format
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
-        
-        // Sync status for existing products
-        const linkedShop = product.id ? this.getLinkedShopProduct(product.id) : null;
-        const syncStatus = product.id ? this.getSyncStatus(product, linkedShop) : null;
         
         return `
             <form id="productForm">
@@ -927,59 +525,40 @@ const Products = {
                     </div>
                 </div>
                 
-                <!-- WEBSITE INTEGRATION SECTION -->
+                <!-- WEBSITE SECTION (Unified Schema) -->
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; color: white;">
-                    <h4 style="margin: 0 0 12px; color: white;">🌐 Website Integration (breadhub.shop)</h4>
+                    <h4 style="margin: 0 0 12px; color: white;">🌐 Website Settings (breadhub.shop)</h4>
+                    
+                    <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                        ${product.shop ? `
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <span style="font-size: 1.2rem;">${product.shop.isPublished ? '✅' : '📝'}</span>
+                                <span><strong>${product.shop.isPublished ? 'Published' : 'Draft'}</strong></span>
+                            </div>
+                            ${product.shop.imageUrl ? '<small style="opacity: 0.8;">✅ Has image</small>' : '<small style="opacity: 0.8;">⚠️ No image yet</small>'}
+                        ` : `
+                            <small style="opacity: 0.8;">💡 Shop settings will be created when you save.</small>
+                        `}
+                    </div>
+                    
+                    <!-- Publish checkbox -->
+                    <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" name="shopIsPublished" id="shopIsPublished" 
+                                   ${product.shop?.isPublished ? 'checked' : ''}
+                                   style="width: 20px; height: 20px; cursor: pointer;">
+                            <span style="font-size: 1rem;">
+                                <strong>Publish on website</strong><br>
+                                <small style="opacity: 0.8;">When checked, product will be visible on breadhub.shop</small>
+                            </span>
+                        </label>
+                    </div>
                     
                     ${product.id ? `
-                        <!-- Sync Status -->
-                        <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                            ${linkedShop ? `
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <span style="font-size: 1.2rem;">✅</span>
-                                    <span><strong>Linked</strong> to website product</span>
-                                </div>
-                                <small style="opacity: 0.8;">Shop ID: ${linkedShop.id}</small><br>
-                                <small style="opacity: 0.8;">Shop Price: ₱${linkedShop.price || 0}</small>
-                            ` : `
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <span style="font-size: 1.2rem;">⚠️</span>
-                                    <span><strong>Not linked</strong> to any website product</span>
-                                </div>
-                                <button type="button" class="btn btn-sm" onclick="Products.showLinkModal('${product.id}')" 
-                                        style="background: white; color: #764ba2; margin-top: 8px;">
-                                    🔗 Link to Existing Website Product
-                                </button>
-                            `}
-                        </div>
-                        
-                        <!-- Auto-sync checkbox -->
-                        <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                                <input type="checkbox" name="autoSyncWebsite" id="autoSyncWebsite" 
-                                       ${product.autoSyncWebsite !== false ? 'checked' : ''}
-                                       style="width: 20px; height: 20px; cursor: pointer;">
-                                <span style="font-size: 1rem;">
-                                    <strong>Auto-sync price to website</strong><br>
-                                    <small style="opacity: 0.8;">When enabled, saving will update the website price</small>
-                                </span>
-                            </label>
-                        </div>
-                    ` : `
-                        <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                            <span>💡 Save the product first to enable website linking.</span>
-                        </div>
-                    `}
-                    
-                    ${product.id && linkedShop ? `
                         <button type="button" class="btn" onclick="Products.launchWebsiteAdmin(Products.getById('${product.id}'))" 
                                 style="background: white; color: #764ba2; font-weight: bold; width: 100%;">
-                            🚀 Launch Website Admin (Add Images, SEO, Description)
+                            🚀 Edit on Website Admin (Images, SEO, Description)
                         </button>
-                    ` : product.id ? `
-                        <p style="font-size: 0.85rem; opacity: 0.8; text-align: center;">
-                            Link to a website product first, then you can launch Website Admin.
-                        </p>
                     ` : ''}
                 </div>
                 
@@ -1185,9 +764,8 @@ const Products = {
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
         
-        // Sync status
-        const linkedShop = this.getLinkedShopProduct(product.id);
-        const syncStatus = this.getSyncStatus(product, linkedShop);
+        // Get shop status from unified schema
+        const shopStatus = this.getShopStatus(product);
         
         return `
             <div style="padding: 16px 0;">
@@ -1301,27 +879,26 @@ const Products = {
                     </div>
                 </div>
                 
-                <!-- Website Integration Section -->
+                <!-- Website Status Section -->
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; margin: 16px 0; color: white;">
                     <h4 style="margin: 0 0 12px; color: white;">🌐 Website Status</h4>
                     
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                        <span style="font-size: 1.3rem;">${syncStatus.icon}</span>
-                        <span style="font-size: 1.1rem;">${syncStatus.text}</span>
+                        <span style="font-size: 1.3rem;">${shopStatus.icon}</span>
+                        <span style="font-size: 1.1rem;">${shopStatus.text}</span>
                     </div>
                     
-                    ${linkedShop ? `
+                    ${product.shop ? `
                         <div style="background: rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem;">
-                            <div>Shop Price: <strong>₱${linkedShop.price || 0}</strong></div>
-                            <div>Active: ${linkedShop.isActive ? '✅ Yes' : '❌ No'}</div>
-                            ${linkedShop.description ? `<div>Description: ✅ Set</div>` : `<div>Description: ⚠️ Missing</div>`}
-                            ${linkedShop.imageUrl ? `<div>Image: ✅ Set</div>` : `<div>Image: ⚠️ Missing</div>`}
+                            <div>Published: ${product.shop.isPublished ? '✅ Yes' : '❌ No'}</div>
+                            ${product.shop.description ? `<div>Description: ✅ Set</div>` : `<div>Description: ⚠️ Missing</div>`}
+                            ${product.shop.imageUrl || (product.shop.images && product.shop.images.length > 0) ? `<div>Image: ✅ Set</div>` : `<div>Image: ⚠️ Missing</div>`}
                         </div>
                     ` : ''}
                     
                     <button class="btn" onclick="Products.launchWebsiteAdmin(Products.getById('${product.id}'))" 
                             style="background: white; color: #764ba2; font-weight: bold; width: 100%;">
-                        🚀 Launch Website Admin
+                        🚀 Edit on Website Admin
                     </button>
                 </div>
                 
@@ -1445,8 +1022,19 @@ const Products = {
                 markupPercent: parseFloat(formData.get('markupPercent')) || 40
             },
             finalSRP: parseFloat(formData.get('finalSRP')) || 0,
-            autoSyncWebsite: document.getElementById('autoSyncWebsite')?.checked !== false,
             notes: formData.get('notes') || ''
+        };
+        
+        // Get existing shop data or create new
+        const existingProduct = id ? this.data.find(p => p.id === id) : null;
+        data.shop = {
+            isPublished: document.getElementById('shopIsPublished')?.checked || false,
+            description: existingProduct?.shop?.description || '',
+            fullDescription: existingProduct?.shop?.fullDescription || '',
+            imageUrl: existingProduct?.shop?.imageUrl || '',
+            images: existingProduct?.shop?.images || [],
+            hasVariants: existingProduct?.shop?.hasVariants || false,
+            variants: existingProduct?.shop?.variants || []
         };
 
         if (!data.name || !data.doughRecipeId) {
@@ -1470,18 +1058,8 @@ const Products = {
                 Toast.success('Product created');
             }
             
-            // Only sync to website if auto-sync is enabled AND product is already linked
-            const existingProduct = id ? this.data.find(p => p.id === id) : null;
-            const isLinked = existingProduct?.shopProductId || this.getLinkedShopProduct(productId);
-            
-            if (data.autoSyncWebsite && isLinked) {
-                await this.syncToWebsite(productId, data);
-                Toast.info('Price synced to website');
-            }
-            
             Modal.close();
             await this.load();
-            await this.loadShopProducts();
             this.render();
             
         } catch (error) {
@@ -1494,11 +1072,10 @@ const Products = {
         const product = this.data.find(p => p.id === id);
         if (!product) return;
         
-        const linkedShop = this.getLinkedShopProduct(id);
         let confirmMsg = `Delete "${product.name}"?`;
         
-        if (linkedShop) {
-            confirmMsg += `\n\nThis product is linked to the website. The website product will NOT be deleted automatically.`;
+        if (product.shop?.isPublished) {
+            confirmMsg += `\n\n⚠️ This product is published on the website. It will be removed from there too.`;
         }
         
         if (!confirm(confirmMsg)) return;

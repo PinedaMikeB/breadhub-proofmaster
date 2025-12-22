@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BreadHub Data Migration - Merge Products</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; padding: 2rem; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { color: #ffd700; margin-bottom: 1rem; }
+        h2 { color: #87ceeb; margin: 1.5rem 0 1rem; font-size: 1.2rem; }
+        .card { background: #16213e; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+        .warning { background: #8b0000; border-left: 4px solid #ff4444; }
+        .success { background: #006400; border-left: 4px solid #44ff44; }
+        .info { background: #1e3a5f; border-left: 4px solid #4444ff; }
+        button { padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 0.5rem 0.5rem 0.5rem 0; }
+        .btn-primary { background: #ffd700; color: #1a1a2e; font-weight: bold; }
+        .btn-danger { background: #ff4444; color: white; }
+        .btn-secondary { background: #444; color: white; }
+        .btn-success { background: #44aa44; color: white; }
+        pre { background: #0d1117; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; margin: 1rem 0; }
+        .log { max-height: 400px; overflow-y: auto; }
+        .log-entry { padding: 0.25rem 0; border-bottom: 1px solid #333; }
+        .log-entry.error { color: #ff6b6b; }
+        .log-entry.success { color: #69db7c; }
+        .log-entry.info { color: #74c0fc; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin: 1rem 0; }
+        .stat { background: #0d1117; padding: 1rem; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: bold; color: #ffd700; }
+        .stat-label { font-size: 0.85rem; color: #888; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #333; }
+        th { background: #0d1117; color: #ffd700; }
+        .match { background: rgba(68, 255, 68, 0.1); }
+        .no-match { background: rgba(255, 68, 68, 0.1); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 BreadHub Data Migration</h1>
+        <p>Merge <code>products</code> (ProofMaster) + <code>shopProducts</code> (Website) into unified <code>products</code> collection</p>
+        
+        <div class="card warning">
+            <h2>⚠️ Before You Start</h2>
+            <ul style="margin-left: 1.5rem; line-height: 1.8;">
+                <li>This will merge your two collections into ONE unified <code>products</code> collection</li>
+                <li>Backup your Firebase data first (Export from Firebase Console)</li>
+                <li>Run this ONCE only</li>
+            </ul>
+        </div>
+        
+        <div class="card">
+            <h2>Step 1: Analyze Current Data</h2>
+            <button class="btn-primary" onclick="analyzeData()">🔍 Analyze Collections</button>
+            <div id="analysisResults"></div>
+        </div>
+        
+        <div class="card">
+            <h2>Step 2: Preview Merge</h2>
+            <button class="btn-secondary" onclick="previewMerge()">👁️ Preview Merge Plan</button>
+            <div id="mergePreview"></div>
+        </div>
+        
+        <div class="card">
+            <h2>Step 3: Execute Migration</h2>
+            <button class="btn-danger" onclick="executeMigration()" id="migrateBtn" disabled>🚀 Execute Migration</button>
+            <div id="migrationLog" class="log"></div>
+        </div>
+        
+        <div class="card info">
+            <h2>📋 New Unified Schema</h2>
+            <pre>{
+  name: "Ensaymada",
+  category: "classic-filipino",
+  
+  // Recipe (from ProofMaster)
+  recipe: {
+    doughRecipeId: "...",
+    fillings: [...],
+    toppings: [...],
+    portioning: { doughWeight: 40, finalWeight: 38 }
+  },
+  
+  // Costs (from ProofMaster)  
+  costs: { packaging: 0.50, labor: 1.00 },
+  pricing: { markupPercent: 40, suggestedSRP: 7.70 },
+  finalSRP: 8.00,  // THE price - single source of truth
+  
+  // Shop (from shopProducts)
+  shop: {
+    isPublished: true,
+    description: "...",
+    fullDescription: "...",
+    imageUrl: "...",
+    images: [],
+    hasVariants: false,
+    variants: []
+  },
+  
+  // Meta
+  createdAt: timestamp,
+  updatedAt: timestamp
+}</pre>
+        </div>
+    </div>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script>
+        // Firebase config - ProofMaster Database (where both collections live)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAj2szYv9ynVFrxdH0tpUsOg7JmJn6Wq0g",
+            authDomain: "breadhub-proofmaster.firebaseapp.com",
+            projectId: "breadhub-proofmaster",
+            storageBucket: "breadhub-proofmaster.firebasestorage.app",
+            messagingSenderId: "222137689770",
+            appId: "1:222137689770:web:645c552afa835732c852d3"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        let pmProducts = [];
+        let shopProducts = [];
+        let mergeplan = [];
+        
+        function log(msg, type = 'info') {
+            const div = document.getElementById('migrationLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            div.appendChild(entry);
+            div.scrollTop = div.scrollHeight;
+        }
+        
+        async function analyzeData() {
+            const results = document.getElementById('analysisResults');
+            results.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                // Load ProofMaster products
+                const pmSnapshot = await db.collection('products').get();
+                pmProducts = pmSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Load shopProducts
+                const shopSnapshot = await db.collection('shopProducts').get();
+                shopProducts = shopSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Find matches
+                let matched = 0;
+                let pmOnly = 0;
+                let shopOnly = 0;
+                
+                const matchDetails = [];
+                
+                pmProducts.forEach(pm => {
+                    const shopMatch = shopProducts.find(sp => 
+                        sp.proofmasterProductId === pm.id ||
+                        sp.name?.toLowerCase().trim() === pm.name?.toLowerCase().trim()
+                    );
+                    if (shopMatch) {
+                        matched++;
+                        matchDetails.push({ pm, shop: shopMatch, status: 'matched' });
+                    } else {
+                        pmOnly++;
+                        matchDetails.push({ pm, shop: null, status: 'pm-only' });
+                    }
+                });
+                
+                shopProducts.forEach(sp => {
+                    const alreadyMatched = matchDetails.some(m => m.shop?.id === sp.id);
+                    if (!alreadyMatched) {
+                        shopOnly++;
+                        matchDetails.push({ pm: null, shop: sp, status: 'shop-only' });
+                    }
+                });
+                
+                results.innerHTML = `
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-value">${pmProducts.length}</div>
+                            <div class="stat-label">ProofMaster Products</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${shopProducts.length}</div>
+                            <div class="stat-label">Shop Products</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${matched}</div>
+                            <div class="stat-label">Matched</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${pmOnly}</div>
+                            <div class="stat-label">ProofMaster Only</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${shopOnly}</div>
+                            <div class="stat-label">Shop Only</div>
+                        </div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>ProofMaster</th>
+                                <th>Shop Product</th>
+                                <th>Price Match</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${matchDetails.map(m => `
+                                <tr class="${m.status === 'matched' ? 'match' : 'no-match'}">
+                                    <td>${m.status === 'matched' ? '✅' : m.status === 'pm-only' ? '🔶 PM only' : '🔷 Shop only'}</td>
+                                    <td>${m.pm?.name || '-'}<br><small>₱${m.pm?.finalSRP || 0}</small></td>
+                                    <td>${m.shop?.name || '-'}<br><small>₱${m.shop?.price || 0}</small></td>
+                                    <td>${m.pm && m.shop ? (Math.abs((m.pm.finalSRP || 0) - (m.shop.price || 0)) < 0.01 ? '✅' : '⚠️ Different') : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+                // Store for merge
+                window.matchDetails = matchDetails;
+                
+                document.getElementById('migrateBtn').disabled = false;
+                
+            } catch (error) {
+                results.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+                console.error(error);
+            }
+        }
+        
+        function previewMerge() {
+            const preview = document.getElementById('mergePreview');
+            
+            if (!window.matchDetails) {
+                preview.innerHTML = '<p>Run analysis first!</p>';
+                return;
+            }
+            
+            const plan = window.matchDetails.map(m => {
+                if (m.status === 'matched') {
+                    return {
+                        action: 'UPDATE',
+                        id: m.pm.id,
+                        name: m.pm.name,
+                        description: `Merge shop data (image, description) into existing ProofMaster product`,
+                        shopIdToDelete: m.shop.id
+                    };
+                } else if (m.status === 'pm-only') {
+                    return {
+                        action: 'KEEP',
+                        id: m.pm.id,
+                        name: m.pm.name,
+                        description: 'Add empty shop fields'
+                    };
+                } else {
+                    return {
+                        action: 'CONVERT',
+                        id: m.shop.id,
+                        name: m.shop.name,
+                        description: 'Convert shop-only product to unified schema (no recipe data)'
+                    };
+                }
+            });
+            
+            mergeplan = plan;
+            
+            preview.innerHTML = `
+                <table>
+                    <thead>
+                        <tr><th>Action</th><th>Product</th><th>What will happen</th></tr>
+                    </thead>
+                    <tbody>
+                        ${plan.map(p => `
+                            <tr>
+                                <td><strong style="color:${p.action === 'UPDATE' ? '#69db7c' : p.action === 'KEEP' ? '#74c0fc' : '#ffd43b'}">${p.action}</strong></td>
+                                <td>${p.name}</td>
+                                <td>${p.description}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        async function executeMigration() {
+            if (!confirm('Are you sure? This will modify your Firebase data. Make sure you have a backup!')) {
+                return;
+            }
+            
+            if (!window.matchDetails) {
+                alert('Run analysis first!');
+                return;
+            }
+            
+            const btn = document.getElementById('migrateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Migrating...';
+            
+            log('Starting migration...', 'info');
+            
+            const batch = db.batch();
+            let updates = 0;
+            let converts = 0;
+            let deletes = 0;
+            
+            try {
+                for (const m of window.matchDetails) {
+                    if (m.status === 'matched') {
+                        // Merge shop data into ProofMaster product
+                        const pmRef = db.collection('products').doc(m.pm.id);
+                        
+                        const mergedData = {
+                            // Keep all existing ProofMaster data
+                            ...m.pm,
+                            
+                            // Add shop fields
+                            shop: {
+                                isPublished: m.shop.isActive !== false,
+                                description: m.shop.description || '',
+                                fullDescription: m.shop.fullDescription || '',
+                                imageUrl: m.shop.imageUrl || '',
+                                images: m.shop.images || [],
+                                hasVariants: m.shop.hasVariants || false,
+                                variants: m.shop.variants || []
+                            },
+                            
+                            // Use ProofMaster price as source of truth
+                            finalSRP: m.pm.finalSRP || m.shop.price || 0,
+                            
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        // Remove old linking fields
+                        delete mergedData.shopProductId;
+                        delete mergedData.proofmasterProductId;
+                        delete mergedData.lastSyncedAt;
+                        delete mergedData.autoSyncWebsite;
+                        delete mergedData.id;
+                        
+                        batch.update(pmRef, mergedData);
+                        log(`UPDATE: ${m.pm.name} - merged with shop data`, 'success');
+                        updates++;
+                        
+                        // Delete the shopProduct
+                        const shopRef = db.collection('shopProducts').doc(m.shop.id);
+                        batch.delete(shopRef);
+                        log(`DELETE: shopProducts/${m.shop.id} (merged into products)`, 'info');
+                        deletes++;
+                        
+                    } else if (m.status === 'pm-only') {
+                        // Add empty shop fields to ProofMaster product
+                        const pmRef = db.collection('products').doc(m.pm.id);
+                        
+                        const updatedData = {
+                            shop: {
+                                isPublished: false,
+                                description: '',
+                                fullDescription: '',
+                                imageUrl: '',
+                                images: [],
+                                hasVariants: false,
+                                variants: []
+                            },
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        batch.update(pmRef, updatedData);
+                        log(`KEEP: ${m.pm.name} - added empty shop fields`, 'success');
+                        updates++;
+                        
+                    } else if (m.status === 'shop-only') {
+                        // Convert shop product to unified schema in products collection
+                        const newRef = db.collection('products').doc(); // New ID
+                        
+                        const convertedData = {
+                            name: m.shop.name,
+                            category: m.shop.category || 'other',
+                            
+                            // Empty recipe (no ProofMaster data)
+                            recipe: {
+                                doughRecipeId: null,
+                                fillings: [],
+                                toppings: [],
+                                portioning: { doughWeight: 0, finalWeight: 0 }
+                            },
+                            
+                            costs: { packaging: 0, labor: 0 },
+                            pricing: { markupPercent: 40 },
+                            finalSRP: m.shop.price || 0,
+                            
+                            // Shop data
+                            shop: {
+                                isPublished: m.shop.isActive !== false,
+                                description: m.shop.description || '',
+                                fullDescription: m.shop.fullDescription || '',
+                                imageUrl: m.shop.imageUrl || '',
+                                images: m.shop.images || [],
+                                hasVariants: m.shop.hasVariants || false,
+                                variants: m.shop.variants || []
+                            },
+                            
+                            createdAt: m.shop.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        batch.set(newRef, convertedData);
+                        log(`CONVERT: ${m.shop.name} - created in products collection`, 'success');
+                        converts++;
+                        
+                        // Delete original shopProduct
+                        const shopRef = db.collection('shopProducts').doc(m.shop.id);
+                        batch.delete(shopRef);
+                        log(`DELETE: shopProducts/${m.shop.id} (converted to products)`, 'info');
+                        deletes++;
+                    }
+                }
+                
+                // Commit the batch
+                log('Committing batch write...', 'info');
+                await batch.commit();
+                
+                log('', 'info');
+                log('========================================', 'success');
+                log(`✅ MIGRATION COMPLETE!`, 'success');
+                log(`   Updated: ${updates} products`, 'success');
+                log(`   Converted: ${converts} shop-only products`, 'success');
+                log(`   Deleted: ${deletes} shopProducts entries`, 'success');
+                log('========================================', 'success');
+                log('', 'info');
+                log('Next: Update your code to use the unified products collection!', 'info');
+                
+                btn.textContent = '✅ Migration Complete!';
+                btn.className = 'btn-success';
+                
+            } catch (error) {
+                log(`❌ ERROR: ${error.message}`, 'error');
+                console.error(error);
+                btn.disabled = false;
+                btn.textContent = '🚀 Retry Migration';
+            }
+        }
+    </script>
+</body>
+</html>
