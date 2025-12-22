@@ -669,8 +669,8 @@ const Products = {
             proofmasterId: product.id
         });
         
-        // Get the website admin URL - adjust path as needed
-        const adminUrl = `../BreadHub-Website/admin.html?${params.toString()}`;
+        // Use breadhub.shop admin URL (works both locally and on Netlify)
+        const adminUrl = `https://breadhub.shop/admin.html?${params.toString()}`;
         
         // Open in new tab
         window.open(adminUrl, '_blank');
