@@ -192,24 +192,42 @@ const Products = {
                     <span class="version">${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 <div class="recipe-card-body">
-                    <div class="recipe-stat">
-                        <span>Total Cost:</span>
-                        <span><strong>${Utils.formatCurrency(cost.totalCost)}</strong></span>
-                    </div>
-                    <div class="recipe-stat">
-                        <span>Suggested SRP:</span>
-                        <span>${Utils.formatCurrency(cost.suggestedSRP)}</span>
-                    </div>
-                    <div class="recipe-stat" style="background: var(--bg-input); padding: 8px; border-radius: 6px; margin: 4px 0;">
-                        <span><strong>Final SRP:</strong></span>
-                        <span style="color: var(--primary); font-size: 1.2rem;"><strong>${Utils.formatCurrency(product.finalSRP || 0)}</strong></span>
-                    </div>
-                    <div class="recipe-stat">
-                        <span>Margin:</span>
-                        <span style="color: ${marginPercent >= 30 ? 'var(--success)' : marginPercent >= 20 ? 'var(--warning)' : 'var(--danger)'}">
-                            <strong>${marginPercent.toFixed(1)}%</strong>
-                        </span>
-                    </div>
+                    ${product.hasVariants && product.variants?.length > 0 ? `
+                        <!-- Variants Display -->
+                        <div style="background: #E3F2FD; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-size: 0.85rem; font-weight: 600; color: #1565C0; margin-bottom: 4px;">
+                                🏷️ ${product.variants.length} Variant${product.variants.length > 1 ? 's' : ''}
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                ${product.variants.slice(0, 4).map(v => `
+                                    <span style="font-size: 0.75rem; background: white; padding: 2px 6px; border-radius: 4px;">
+                                        ${v.name}${v.size ? ` (${v.size})` : ''}: <strong>${Utils.formatCurrency(v.price)}</strong>
+                                    </span>
+                                `).join('')}
+                                ${product.variants.length > 4 ? `<span style="font-size: 0.75rem; color: #666;">+${product.variants.length - 4} more</span>` : ''}
+                            </div>
+                        </div>
+                    ` : `
+                        <!-- Single Product Pricing -->
+                        <div class="recipe-stat">
+                            <span>Total Cost:</span>
+                            <span><strong>${Utils.formatCurrency(cost.totalCost)}</strong></span>
+                        </div>
+                        <div class="recipe-stat">
+                            <span>Suggested SRP:</span>
+                            <span>${Utils.formatCurrency(cost.suggestedSRP)}</span>
+                        </div>
+                        <div class="recipe-stat" style="background: var(--bg-input); padding: 8px; border-radius: 6px; margin: 4px 0;">
+                            <span><strong>Final SRP:</strong></span>
+                            <span style="color: var(--primary); font-size: 1.2rem;"><strong>${Utils.formatCurrency(product.finalSRP || 0)}</strong></span>
+                        </div>
+                        <div class="recipe-stat">
+                            <span>Margin:</span>
+                            <span style="color: ${marginPercent >= 30 ? 'var(--success)' : marginPercent >= 20 ? 'var(--warning)' : 'var(--danger)'}">
+                                <strong>${marginPercent.toFixed(1)}%</strong>
+                            </span>
+                        </div>
+                    `}
                     
                     <!-- Website Status -->
                     <div class="recipe-stat" style="background: ${shopStatus.color}; padding: 6px 8px; border-radius: 6px; margin-top: 8px;">
@@ -420,6 +438,26 @@ const Products = {
                     </span>
                 </div>
                 
+                <!-- VARIANTS TOGGLE -->
+                <div style="background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #2196F3;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4 style="margin: 0; color: #1565C0;">🏷️ Product Variants</h4>
+                            <p style="font-size: 0.85rem; color: #1565C0; margin: 4px 0 0 0;">
+                                Enable for sizes (Tall/Grande/Venti) or types (Classic/Premium)
+                            </p>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: white; padding: 8px 16px; border-radius: 8px;">
+                            <input type="checkbox" id="hasVariantsCheckbox" ${product.variants && product.variants.length > 0 ? 'checked' : ''} 
+                                   onchange="Products.toggleVariantMode()" style="width: 18px; height: 18px;">
+                            <span style="font-weight: 600; color: #1565C0;">Enable</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- SINGLE RECIPE MODE (default - no variants) -->
+                <div id="singleRecipeMode" style="display: ${product.variants && product.variants.length > 0 ? 'none' : 'block'};">
+                
                 <h4 style="margin: 16px 0 8px;">🥖 Dough Recipe *</h4>
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
                     <div class="form-group">
@@ -594,6 +632,19 @@ const Products = {
                     </div>
                 </div>
                 
+                </div><!-- END singleRecipeMode -->
+                
+                <!-- VARIANTS MODE (multiple recipes) -->
+                <div id="variantsMode" style="display: ${product.variants && product.variants.length > 0 ? 'block' : 'none'};">
+                    <div id="variantsList">
+                        ${product.variants && product.variants.length > 0 ? product.variants.map((v, idx) => this.getVariantHTML(idx, v, currentMainCat)).join('') : ''}
+                    </div>
+                    <button type="button" class="btn" onclick="Products.addVariant()" 
+                            style="background: #2196F3; color: white; margin-top: 12px; width: 100%;">
+                        ➕ Add Another Variant
+                    </button>
+                </div>
+                
                 <!-- WEBSITE SECTION (Unified Schema) -->
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; color: white;">
                     <h4 style="margin: 0 0 12px; color: white;">🌐 Website Settings (breadhub.shop)</h4>
@@ -686,6 +737,435 @@ const Products = {
                 <button type="button" class="btn btn-danger btn-sm" onclick="Products.removeToppingRow(${idx})" style="margin-bottom: 0;">✕</button>
             </div>
         `;
+    },
+    
+    // ========== VARIANT FUNCTIONS ==========
+    variantCounter: 0,
+    
+    // Toggle between single recipe mode and variants mode
+    toggleVariantMode() {
+        const checkbox = document.getElementById('hasVariantsCheckbox');
+        const singleMode = document.getElementById('singleRecipeMode');
+        const variantsMode = document.getElementById('variantsMode');
+        
+        if (checkbox.checked) {
+            singleMode.style.display = 'none';
+            variantsMode.style.display = 'block';
+            
+            // If no variants exist, create the first one
+            const variantsList = document.getElementById('variantsList');
+            if (!variantsList.querySelector('.variant-section')) {
+                this.variantCounter = 0;
+                variantsList.innerHTML = this.getVariantHTML(0, {});
+            }
+        } else {
+            singleMode.style.display = 'block';
+            variantsMode.style.display = 'none';
+        }
+    },
+    
+    // Generate HTML for a single variant with its own recipe
+    getVariantHTML(idx, variant = {}, mainCategory = null) {
+        this.variantCounter = Math.max(this.variantCounter, idx + 1);
+        
+        // Get current main category from form if not provided
+        if (!mainCategory) {
+            const categorySelect = document.getElementById('categorySelect');
+            const selectedCategory = categorySelect?.value || 'donut';
+            mainCategory = this.getMainCategory(selectedCategory);
+        }
+        
+        const recipe = variant.recipe || {};
+        const fillings = recipe.fillings || [];
+        const toppings = recipe.toppings || [];
+        const ingredients = recipe.ingredients || [];
+        
+        const isDrinks = mainCategory === 'drinks';
+        
+        const doughOptions = Doughs.data.map(d => 
+            `<option value="${d.id}" ${recipe.doughRecipeId === d.id ? 'selected' : ''}>${d.name}</option>`
+        ).join('');
+        
+        return `
+            <div class="variant-section" data-idx="${idx}" style="background: white; border: 3px solid ${isDrinks ? '#1565C0' : '#8E44AD'}; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+                <!-- Variant Header -->
+                <div style="background: linear-gradient(135deg, ${isDrinks ? '#1565C0 0%, #42A5F5 100%' : '#8E44AD 0%, #9B59B6 100%'}); padding: 12px 16px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; gap: 12px; flex: 1;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.75rem; opacity: 0.9;">Variant Name *</label>
+                            <input type="text" name="variant_${idx}_name" class="form-input" 
+                                   value="${variant.name || ''}" placeholder="${isDrinks ? 'e.g., Tall, Grande' : 'e.g., Classic, Premium'}" required
+                                   style="background: rgba(255,255,255,0.95); font-weight: bold; margin-top: 4px;">
+                        </div>
+                        <div style="width: 100px;">
+                            <label style="font-size: 0.75rem; opacity: 0.9;">${isDrinks ? 'Size' : 'Type'}</label>
+                            <input type="text" name="variant_${idx}_size" class="form-input" 
+                                   value="${variant.size || ''}" placeholder="${isDrinks ? '12oz' : ''}"
+                                   style="background: rgba(255,255,255,0.95); margin-top: 4px;">
+                        </div>
+                        <div style="width: 100px;">
+                            <label style="font-size: 0.75rem; opacity: 0.9;">Price ₱ *</label>
+                            <input type="number" name="variant_${idx}_price" class="form-input" step="0.50"
+                                   value="${variant.price || ''}" placeholder="0" required
+                                   style="background: #FFF3E0; font-weight: bold; margin-top: 4px;"
+                                   oninput="Products.updateVariantCost(${idx})">
+                        </div>
+                    </div>
+                    ${idx > 0 ? `
+                        <button type="button" onclick="Products.removeVariant(${idx})" 
+                                style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin-left: 12px;">
+                            🗑️
+                        </button>
+                    ` : '<span style="font-size: 0.75rem; opacity: 0.8; margin-left: 12px;">(Primary)</span>'}
+                </div>
+                
+                <!-- Variant Recipe Content -->
+                <div style="padding: 16px;">
+                    ${isDrinks ? `
+                        <!-- DRINKS: Individual Ingredients -->
+                        <div style="background: #E3F2FD; padding: 10px; border-radius: 8px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-weight: 600; font-size: 0.9rem;">🧪 Ingredients</span>
+                                <button type="button" class="btn btn-sm" onclick="Products.addVariantIngredient(${idx})" 
+                                        style="padding: 2px 8px; font-size: 0.75rem; background: #1565C0; color: white;">+ Add</button>
+                            </div>
+                            <div id="variant_${idx}_ingredients">
+                                ${ingredients.length > 0 ? ingredients.map((ing, iidx) => this.getVariantIngredientHTML(idx, iidx, ing)).join('') : '<p style="font-size: 0.8rem; color: #666; margin: 4px 0;">No ingredients yet. Click "+ Add" to add milk, sugar, etc.</p>'}
+                            </div>
+                        </div>
+                        
+                        <!-- Toppings for Drinks (whip cream, etc.) -->
+                        <div style="background: #E8F5E9; padding: 10px; border-radius: 8px; margin-bottom: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-weight: 600; font-size: 0.9rem;">🧈 Toppings (Whip cream, etc.)</span>
+                                <button type="button" class="btn btn-sm" onclick="Products.addVariantTopping(${idx})" 
+                                        style="padding: 2px 8px; font-size: 0.75rem;">+</button>
+                            </div>
+                            <div id="variant_${idx}_toppings">
+                                ${toppings.length > 0 ? toppings.map((t, tidx) => this.getVariantToppingHTML(idx, tidx, t)).join('') : '<p style="font-size: 0.8rem; color: #999; margin: 4px 0;">No toppings</p>'}
+                            </div>
+                        </div>
+                    ` : `
+                        <!-- BREADS: Dough, Fillings, Toppings -->
+                        <!-- Dough Selection -->
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label>🥖 Dough Recipe</label>
+                                <select name="variant_${idx}_doughRecipeId" class="form-select" onchange="Products.updateVariantCost(${idx})">
+                                    <option value="">Select dough...</option>
+                                    ${doughOptions}
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label>Dough Weight (g)</label>
+                                <input type="number" name="variant_${idx}_doughWeight" class="form-input" 
+                                       value="${recipe.doughWeight || 40}" oninput="Products.updateVariantCost(${idx})">
+                            </div>
+                        </div>
+                        
+                        <!-- Fillings & Toppings -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                            <!-- Fillings -->
+                            <div style="background: #FFF8E1; padding: 10px; border-radius: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600; font-size: 0.9rem;">🥥 Fillings</span>
+                                    <button type="button" class="btn btn-sm" onclick="Products.addVariantFilling(${idx})" 
+                                            style="padding: 2px 8px; font-size: 0.75rem;">+</button>
+                                </div>
+                                <div id="variant_${idx}_fillings">
+                                    ${fillings.length > 0 ? fillings.map((f, fidx) => this.getVariantFillingHTML(idx, fidx, f)).join('') : '<p style="font-size: 0.8rem; color: #999; margin: 4px 0;">No fillings</p>'}
+                                </div>
+                            </div>
+                            <!-- Toppings -->
+                            <div style="background: #E8F5E9; padding: 10px; border-radius: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600; font-size: 0.9rem;">🧈 Toppings</span>
+                                    <button type="button" class="btn btn-sm" onclick="Products.addVariantTopping(${idx})" 
+                                            style="padding: 2px 8px; font-size: 0.75rem;">+</button>
+                                </div>
+                                <div id="variant_${idx}_toppings">
+                                    ${toppings.length > 0 ? toppings.map((t, tidx) => this.getVariantToppingHTML(idx, tidx, t)).join('') : '<p style="font-size: 0.8rem; color: #999; margin: 4px 0;">No toppings</p>'}
+                                </div>
+                            </div>
+                        </div>
+                    `}
+                    
+                    <!-- Costs -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: #f5f5f5; padding: 10px; border-radius: 8px;">
+                        ${!isDrinks ? `
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 0.75rem;">Final Wt (g)</label>
+                            <input type="number" name="variant_${idx}_finalWeight" class="form-input"
+                                   value="${recipe.finalWeight || 38}" style="font-size: 0.9rem; padding: 6px;">
+                        </div>
+                        ` : `
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 0.75rem;">Cup Size (oz)</label>
+                            <input type="number" name="variant_${idx}_cupSize" class="form-input"
+                                   value="${recipe.cupSize || 12}" style="font-size: 0.9rem; padding: 6px;">
+                        </div>
+                        `}
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 0.75rem;">Packaging ₱</label>
+                            <input type="number" name="variant_${idx}_packagingCost" class="form-input variant-cost-input" step="0.01"
+                                   value="${recipe.packagingCost || (isDrinks ? 5 : 0.50)}" style="font-size: 0.9rem; padding: 6px;"
+                                   onchange="Products.updateVariantCost(${idx})" oninput="Products.updateVariantCost(${idx})">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 0.75rem;">Labor ₱</label>
+                            <input type="number" name="variant_${idx}_laborCost" class="form-input variant-cost-input" step="0.01"
+                                   value="${recipe.laborCost || 1.00}" style="font-size: 0.9rem; padding: 6px;"
+                                   onchange="Products.updateVariantCost(${idx})" oninput="Products.updateVariantCost(${idx})">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 0.75rem;">Markup %</label>
+                            <input type="number" name="variant_${idx}_markupPercent" class="form-input variant-cost-input"
+                                   value="${recipe.markupPercent || 40}" style="font-size: 0.9rem; padding: 6px;"
+                                   onchange="Products.updateVariantCost(${idx})" oninput="Products.updateVariantCost(${idx})">
+                        </div>
+                    </div>
+                    
+                    <!-- COST BREAKDOWN for this variant -->
+                    <div id="variant_${idx}_costBreakdown" style="background: linear-gradient(135deg, #F8F4E8 0%, #FDF9F0 100%); padding: 12px; border-radius: 8px; margin-top: 12px; border: 2px solid #DDD;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-weight: 600; color: var(--primary);">💰 Cost Breakdown</span>
+                            <button type="button" class="btn btn-sm" onclick="Products.updateVariantCost(${idx})" 
+                                    style="padding: 2px 10px; font-size: 0.75rem; background: var(--primary); color: white;">
+                                🔄 Calculate
+                            </button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; font-size: 0.85rem;">
+                            ${isDrinks ? `
+                                <div style="display: flex; justify-content: space-between;"><span>🧪 Ingredients:</span><span id="variant_${idx}_ingredientsCost">₱0.00</span></div>
+                            ` : `
+                                <div style="display: flex; justify-content: space-between;"><span>🥖 Dough:</span><span id="variant_${idx}_doughCost">₱0.00</span></div>
+                                <div style="display: flex; justify-content: space-between;"><span>🥥 Fillings:</span><span id="variant_${idx}_fillingsCost">₱0.00</span></div>
+                            `}
+                            <div style="display: flex; justify-content: space-between;"><span>🧈 Toppings:</span><span id="variant_${idx}_toppingsCost">₱0.00</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>📦 Packaging:</span><span id="variant_${idx}_packagingDisplay">₱0.00</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>👷 Labor:</span><span id="variant_${idx}_laborDisplay">₱0.00</span></div>
+                            <div style="display: flex; justify-content: space-between; background: #fff; padding: 4px 8px; border-radius: 4px; grid-column: 1/-1; margin-top: 4px;">
+                                <span><strong>📊 TOTAL COST:</strong></span>
+                                <span id="variant_${idx}_totalCost" style="font-weight: bold; color: var(--danger);">₱0.00</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: #E8F5E9; padding: 4px 8px; border-radius: 4px;">
+                                <span>Suggested SRP:</span>
+                                <span id="variant_${idx}_suggestedSRP" style="font-weight: bold; color: var(--success);">₱0.00</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: #E3F2FD; padding: 4px 8px; border-radius: 4px;">
+                                <span>Margin:</span>
+                                <span id="variant_${idx}_margin" style="font-weight: bold;">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    
+    // Calculate and update cost display for a variant
+    updateVariantCost(variantIdx) {
+        const idx = variantIdx;
+        
+        // Get main category
+        const categorySelect = document.getElementById('categorySelect');
+        const selectedCategory = categorySelect?.value || 'donut';
+        const mainCategory = this.getMainCategory(selectedCategory);
+        const isDrinks = mainCategory === 'drinks';
+        
+        let totalCost = 0;
+        
+        if (isDrinks) {
+            // Calculate ingredients cost
+            let ingredientsCost = 0;
+            const ingredientsContainer = document.getElementById(`variant_${idx}_ingredients`);
+            if (ingredientsContainer) {
+                ingredientsContainer.querySelectorAll('.variant-ingredient-row').forEach((row, iidx) => {
+                    const ingredientId = row.querySelector(`[name="variant_${idx}_ingredient_${iidx}_id"]`)?.value;
+                    const amount = parseFloat(row.querySelector(`[name="variant_${idx}_ingredient_${iidx}_amount"]`)?.value) || 0;
+                    if (ingredientId && amount > 0) {
+                        const price = IngredientPrices.getCheapest(ingredientId);
+                        const costPerGram = price?.costPerGram || 0;
+                        ingredientsCost += costPerGram * amount;
+                    }
+                });
+            }
+            document.getElementById(`variant_${idx}_ingredientsCost`).textContent = Utils.formatCurrency(ingredientsCost);
+            totalCost += ingredientsCost;
+        } else {
+            // Calculate dough cost
+            const doughId = document.querySelector(`[name="variant_${idx}_doughRecipeId"]`)?.value;
+            const doughWeight = parseFloat(document.querySelector(`[name="variant_${idx}_doughWeight"]`)?.value) || 0;
+            const dough = Doughs.getById(doughId);
+            const doughCost = dough ? (dough.costPerGram || 0) * doughWeight : 0;
+            document.getElementById(`variant_${idx}_doughCost`).textContent = Utils.formatCurrency(doughCost);
+            totalCost += doughCost;
+            
+            // Calculate fillings cost
+            let fillingsCost = 0;
+            const fillingsContainer = document.getElementById(`variant_${idx}_fillings`);
+            if (fillingsContainer) {
+                fillingsContainer.querySelectorAll('.variant-filling-row').forEach((row, fidx) => {
+                    const recipeId = row.querySelector(`[name="variant_${idx}_filling_${fidx}_id"]`)?.value;
+                    const weight = parseFloat(row.querySelector(`[name="variant_${idx}_filling_${fidx}_weight"]`)?.value) || 0;
+                    if (recipeId && weight > 0) {
+                        const filling = Fillings.getById(recipeId);
+                        fillingsCost += (filling?.costPerGram || 0) * weight;
+                    }
+                });
+            }
+            document.getElementById(`variant_${idx}_fillingsCost`).textContent = Utils.formatCurrency(fillingsCost);
+            totalCost += fillingsCost;
+        }
+        
+        // Calculate toppings cost (both breads and drinks)
+        let toppingsCost = 0;
+        const toppingsContainer = document.getElementById(`variant_${idx}_toppings`);
+        if (toppingsContainer) {
+            toppingsContainer.querySelectorAll('.variant-topping-row').forEach((row, tidx) => {
+                const recipeId = row.querySelector(`[name="variant_${idx}_topping_${tidx}_id"]`)?.value;
+                const weight = parseFloat(row.querySelector(`[name="variant_${idx}_topping_${tidx}_weight"]`)?.value) || 0;
+                if (recipeId && weight > 0) {
+                    const topping = Toppings.getById(recipeId);
+                    toppingsCost += (topping?.costPerGram || 0) * weight;
+                }
+            });
+        }
+        document.getElementById(`variant_${idx}_toppingsCost`).textContent = Utils.formatCurrency(toppingsCost);
+        totalCost += toppingsCost;
+        
+        // Add packaging and labor
+        const packagingCost = parseFloat(document.querySelector(`[name="variant_${idx}_packagingCost"]`)?.value) || 0;
+        const laborCost = parseFloat(document.querySelector(`[name="variant_${idx}_laborCost"]`)?.value) || 0;
+        const markupPercent = parseFloat(document.querySelector(`[name="variant_${idx}_markupPercent"]`)?.value) || 40;
+        
+        document.getElementById(`variant_${idx}_packagingDisplay`).textContent = Utils.formatCurrency(packagingCost);
+        document.getElementById(`variant_${idx}_laborDisplay`).textContent = Utils.formatCurrency(laborCost);
+        
+        totalCost += packagingCost + laborCost;
+        
+        // Update total cost
+        document.getElementById(`variant_${idx}_totalCost`).textContent = Utils.formatCurrency(totalCost);
+        
+        // Calculate suggested SRP
+        const suggestedSRP = totalCost * (1 + markupPercent / 100);
+        document.getElementById(`variant_${idx}_suggestedSRP`).textContent = Utils.formatCurrency(suggestedSRP);
+        
+        // Calculate margin based on entered price
+        const price = parseFloat(document.querySelector(`[name="variant_${idx}_price"]`)?.value) || 0;
+        const margin = price > 0 ? ((price - totalCost) / price * 100) : 0;
+        const marginEl = document.getElementById(`variant_${idx}_margin`);
+        marginEl.textContent = margin.toFixed(1) + '%';
+        marginEl.style.color = margin >= 30 ? 'var(--success)' : margin >= 20 ? 'var(--warning)' : 'var(--danger)';
+    },
+    
+    // Generate ingredient row HTML for drinks variant
+    getVariantIngredientHTML(variantIdx, ingredientIdx, ingredient = {}) {
+        const options = Ingredients.data.map(ing => {
+            const price = IngredientPrices.getCheapest(ing.id);
+            const costPerGram = price?.costPerGram || 0;
+            return `<option value="${ing.id}" ${ingredient.ingredientId === ing.id ? 'selected' : ''}>${ing.name} (₱${costPerGram.toFixed(2)}/g)</option>`;
+        }).join('');
+        
+        return `
+            <div class="variant-ingredient-row" style="display: flex; gap: 4px; margin-bottom: 4px; align-items: center;">
+                <select name="variant_${variantIdx}_ingredient_${ingredientIdx}_id" class="form-select" style="flex: 2; font-size: 0.85rem; padding: 4px;"
+                        onchange="Products.updateVariantCost(${variantIdx})">
+                    <option value="">Select ingredient...</option>
+                    ${options}
+                </select>
+                <input type="number" name="variant_${variantIdx}_ingredient_${ingredientIdx}_amount" class="form-input" 
+                       value="${ingredient.amount || 50}" style="width: 60px; font-size: 0.85rem; padding: 4px;" placeholder="g"
+                       oninput="Products.updateVariantCost(${variantIdx})">
+                <span style="font-size: 0.75rem; color: #666;">g</span>
+                <button type="button" onclick="this.parentElement.remove(); Products.updateVariantCost(${variantIdx})" style="border: none; background: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button>
+            </div>
+        `;
+    },
+    
+    // Add ingredient to a drinks variant
+    addVariantIngredient(variantIdx) {
+        const container = document.getElementById(`variant_${variantIdx}_ingredients`);
+        const emptyMsg = container.querySelector('p');
+        if (emptyMsg) emptyMsg.remove();
+        
+        const existingRows = container.querySelectorAll('.variant-ingredient-row').length;
+        container.insertAdjacentHTML('beforeend', this.getVariantIngredientHTML(variantIdx, existingRows, {}));
+    },
+    
+    // Generate filling row HTML for a variant
+    getVariantFillingHTML(variantIdx, fillingIdx, filling = {}) {
+        const options = Fillings.data.map(f => 
+            `<option value="${f.id}" ${filling.recipeId === f.id ? 'selected' : ''}>${f.name}</option>`
+        ).join('');
+        
+        return `
+            <div class="variant-filling-row" style="display: flex; gap: 4px; margin-bottom: 4px;">
+                <select name="variant_${variantIdx}_filling_${fillingIdx}_id" class="form-select" style="flex: 2; font-size: 0.85rem; padding: 4px;"
+                        onchange="Products.updateVariantCost(${variantIdx})">
+                    <option value="">Select...</option>
+                    ${options}
+                </select>
+                <input type="number" name="variant_${variantIdx}_filling_${fillingIdx}_weight" class="form-input" 
+                       value="${filling.weight || 15}" style="width: 55px; font-size: 0.85rem; padding: 4px;" placeholder="g"
+                       oninput="Products.updateVariantCost(${variantIdx})">
+                <button type="button" onclick="this.parentElement.remove(); Products.updateVariantCost(${variantIdx})" style="border: none; background: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button>
+            </div>
+        `;
+    },
+    
+    // Generate topping row HTML for a variant
+    getVariantToppingHTML(variantIdx, toppingIdx, topping = {}) {
+        const options = Toppings.data.map(t => 
+            `<option value="${t.id}" ${topping.recipeId === t.id ? 'selected' : ''}>${t.name}</option>`
+        ).join('');
+        
+        return `
+            <div class="variant-topping-row" style="display: flex; gap: 4px; margin-bottom: 4px;">
+                <select name="variant_${variantIdx}_topping_${toppingIdx}_id" class="form-select" style="flex: 2; font-size: 0.85rem; padding: 4px;"
+                        onchange="Products.updateVariantCost(${variantIdx})">
+                    <option value="">Select...</option>
+                    ${options}
+                </select>
+                <input type="number" name="variant_${variantIdx}_topping_${toppingIdx}_weight" class="form-input" 
+                       value="${topping.weight || 10}" style="width: 55px; font-size: 0.85rem; padding: 4px;" placeholder="g"
+                       oninput="Products.updateVariantCost(${variantIdx})">
+                <button type="button" onclick="this.parentElement.remove(); Products.updateVariantCost(${variantIdx})" style="border: none; background: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button>
+            </div>
+        `;
+    },
+    
+    // Add a new variant
+    addVariant() {
+        const variantsList = document.getElementById('variantsList');
+        const idx = this.variantCounter++;
+        variantsList.insertAdjacentHTML('beforeend', this.getVariantHTML(idx, {}));
+    },
+    
+    // Remove a variant
+    removeVariant(idx) {
+        const section = document.querySelector(`.variant-section[data-idx="${idx}"]`);
+        if (section) section.remove();
+    },
+    
+    // Add filling to a variant
+    addVariantFilling(variantIdx) {
+        const container = document.getElementById(`variant_${variantIdx}_fillings`);
+        const emptyMsg = container.querySelector('p');
+        if (emptyMsg) emptyMsg.remove();
+        
+        const existingRows = container.querySelectorAll('.variant-filling-row').length;
+        container.insertAdjacentHTML('beforeend', this.getVariantFillingHTML(variantIdx, existingRows, {}));
+    },
+    
+    // Add topping to a variant
+    addVariantTopping(variantIdx) {
+        const container = document.getElementById(`variant_${variantIdx}_toppings`);
+        const emptyMsg = container.querySelector('p');
+        if (emptyMsg) emptyMsg.remove();
+        
+        const existingRows = container.querySelectorAll('.variant-topping-row').length;
+        container.insertAdjacentHTML('beforeend', this.getVariantToppingHTML(variantIdx, existingRows, {}));
     },
 
     addFillingRow() {
@@ -836,6 +1316,13 @@ const Products = {
         // Get shop status from unified schema
         const shopStatus = this.getShopStatus(product);
         
+        // Get main category
+        const mainCat = product.mainCategory || this.getMainCategory(product.category);
+        const isDrinks = mainCat === 'drinks';
+        
+        // Check for variants
+        const hasVariants = product.hasVariants && product.variants && product.variants.length > 0;
+        
         return `
             <div style="padding: 16px 0;">
                 <div class="recipe-stat">
@@ -843,35 +1330,71 @@ const Products = {
                     <span>${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 
-                <h4 style="margin: 16px 0 8px;">Recipe Components</h4>
-                <div class="recipe-stat">
-                    <span>🥖 Dough:</span>
-                    <span>${dough?.name || 'Unknown'} (${product.portioning?.doughWeight || 0}g)</span>
-                </div>
-                
-                <div style="margin: 8px 0;">
-                    <strong>🥥 Fillings:</strong>
-                    ${fillings.length > 0 ? `
-                        <ul style="margin: 4px 0 0 20px;">
-                            ${fillings.map(f => {
-                                const filling = Fillings.getById(f.recipeId);
-                                return `<li>${filling?.name || 'Unknown'} (${f.weight}g)</li>`;
-                            }).join('')}
-                        </ul>
-                    ` : ' <span style="color: var(--text-secondary);">None</span>'}
-                </div>
-                
-                <div style="margin: 8px 0;">
-                    <strong>🧈 Toppings:</strong>
-                    ${toppings.length > 0 ? `
-                        <ul style="margin: 4px 0 0 20px;">
-                            ${toppings.map(t => {
-                                const topping = Toppings.getById(t.recipeId);
-                                return `<li>${topping?.name || 'Unknown'} (${t.weight}g)</li>`;
-                            }).join('')}
-                        </ul>
-                    ` : ' <span style="color: var(--text-secondary);">None</span>'}
-                </div>
+                ${hasVariants ? `
+                    <!-- VARIANTS VIEW -->
+                    <div style="background: #E3F2FD; padding: 16px; border-radius: 12px; margin: 16px 0;">
+                        <h4 style="margin: 0 0 12px; color: #1565C0;">🏷️ Variants (${product.variants.length})</h4>
+                        ${product.variants.map((v, idx) => `
+                            <div style="background: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; ${idx === 0 ? 'border: 2px solid #2196F3;' : ''}">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong style="font-size: 1.1rem;">${v.name}${v.size ? ` (${v.size})` : ''}</strong>
+                                    <span style="font-size: 1.2rem; color: var(--primary); font-weight: bold;">${Utils.formatCurrency(v.price)}</span>
+                                </div>
+                                ${v.recipe ? `
+                                    <div style="font-size: 0.85rem; color: #666;">
+                                        ${isDrinks ? `
+                                            ${v.recipe.ingredients?.length > 0 ? `<div>🧪 Ingredients: ${v.recipe.ingredients.map(i => {
+                                                const ing = Ingredients.getById(i.ingredientId);
+                                                return `${ing?.name || '?'} (${i.amount}g)`;
+                                            }).join(', ')}</div>` : ''}
+                                        ` : `
+                                            ${v.recipe.doughRecipeId ? `<div>🥖 Dough: ${Doughs.getById(v.recipe.doughRecipeId)?.name || '?'} (${v.recipe.doughWeight || 0}g)</div>` : ''}
+                                            ${v.recipe.fillings?.length > 0 ? `<div>🥥 Fillings: ${v.recipe.fillings.map(f => {
+                                                const fill = Fillings.getById(f.recipeId);
+                                                return `${fill?.name || '?'} (${f.weight}g)`;
+                                            }).join(', ')}</div>` : ''}
+                                        `}
+                                        ${v.recipe.toppings?.length > 0 ? `<div>🧈 Toppings: ${v.recipe.toppings.map(t => {
+                                            const top = Toppings.getById(t.recipeId);
+                                            return `${top?.name || '?'} (${t.weight}g)`;
+                                        }).join(', ')}</div>` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `
+                    <!-- SINGLE RECIPE VIEW -->
+                    <h4 style="margin: 16px 0 8px;">Recipe Components</h4>
+                    <div class="recipe-stat">
+                        <span>🥖 Dough:</span>
+                        <span>${dough?.name || 'Unknown'} (${product.portioning?.doughWeight || 0}g)</span>
+                    </div>
+                    
+                    <div style="margin: 8px 0;">
+                        <strong>🥥 Fillings:</strong>
+                        ${fillings.length > 0 ? `
+                            <ul style="margin: 4px 0 0 20px;">
+                                ${fillings.map(f => {
+                                    const filling = Fillings.getById(f.recipeId);
+                                    return `<li>${filling?.name || 'Unknown'} (${f.weight}g)</li>`;
+                                }).join('')}
+                            </ul>
+                        ` : ' <span style="color: var(--text-secondary);">None</span>'}
+                    </div>
+                    
+                    <div style="margin: 8px 0;">
+                        <strong>🧈 Toppings:</strong>
+                        ${toppings.length > 0 ? `
+                            <ul style="margin: 4px 0 0 20px;">
+                                ${toppings.map(t => {
+                                    const topping = Toppings.getById(t.recipeId);
+                                    return `<li>${topping?.name || 'Unknown'} (${t.weight}g)</li>`;
+                                }).join('')}
+                            </ul>
+                        ` : ' <span style="color: var(--text-secondary);">None</span>'}
+                    </div>
+                `}
 
                 <h4 style="margin: 16px 0 8px;">Process</h4>
                 <div class="recipe-stat">
@@ -1040,82 +1563,162 @@ const Products = {
         const form = document.getElementById('productForm');
         const formData = new FormData(form);
         
-        // Collect fillings
-        const fillings = [];
-        document.querySelectorAll('.filling-row').forEach(row => {
-            const idx = row.dataset.idx;
-            const recipeId = document.querySelector(`[name="filling_${idx}_id"]`)?.value;
-            const weight = parseFloat(document.querySelector(`[name="filling_${idx}_weight"]`)?.value) || 0;
-            if (recipeId && weight > 0) {
-                fillings.push({ recipeId, weight });
-            }
-        });
+        // Check if variants mode is enabled
+        const hasVariants = document.getElementById('hasVariantsCheckbox')?.checked || false;
         
-        // Collect toppings
-        const toppings = [];
-        document.querySelectorAll('.topping-row').forEach(row => {
-            const idx = row.dataset.idx;
-            const recipeId = document.querySelector(`[name="topping_${idx}_id"]`)?.value;
-            const weight = parseFloat(document.querySelector(`[name="topping_${idx}_weight"]`)?.value) || 0;
-            if (recipeId && weight > 0) {
-                toppings.push({ recipeId, weight });
-            }
-        });
+        let data;
         
-        const data = {
-            name: formData.get('name'),
-            category: formData.get('category'),
-            mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
-            doughRecipeId: formData.get('doughRecipeId'),
-            fillings,
-            toppings,
-            portioning: {
-                doughWeight: parseFloat(formData.get('doughWeight')) || 40,
-                finalWeight: parseFloat(formData.get('finalWeight')) || 38
-            },
-            secondProof: {
-                duration: parseFloat(formData.get('proofDuration')) || 45,
-                temperature: parseFloat(formData.get('proofTemp')) || 32,
-                humidity: parseFloat(formData.get('proofHumidity')) || 80
-            },
-            baking: {
-                ovenTempTop: parseFloat(formData.get('ovenTempTop')) || 180,
-                ovenTempBottom: parseFloat(formData.get('ovenTempBottom')) || 180,
-                duration: parseFloat(formData.get('bakeDuration')) || 18,
-                rotateAt: parseFloat(formData.get('rotateAt')) || 9
-            },
-            costs: {
-                packaging: parseFloat(formData.get('packagingCost')) || 0,
-                labor: parseFloat(formData.get('laborCost')) || 0
-            },
-            pricing: {
-                markupPercent: parseFloat(formData.get('markupPercent')) || 40
-            },
-            finalSRP: parseFloat(formData.get('finalSRP')) || 0,
-            notes: formData.get('notes') || ''
-        };
+        if (hasVariants) {
+            // ========== VARIANTS MODE ==========
+            const variants = this.collectVariants();
+            
+            if (variants.length === 0) {
+                Toast.error('Please add at least one variant with name and price');
+                return;
+            }
+            
+            // Validate variants
+            for (const v of variants) {
+                if (!v.name || !v.price) {
+                    Toast.error('Each variant must have a name and price');
+                    return;
+                }
+            }
+            
+            // Use first variant's price as base finalSRP
+            const baseSRP = variants[0].price;
+            
+            data = {
+                name: formData.get('name'),
+                category: formData.get('category'),
+                mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                // Store first variant's recipe as the "base" recipe for backward compatibility
+                doughRecipeId: variants[0].recipe?.doughRecipeId || '',
+                fillings: variants[0].recipe?.fillings || [],
+                toppings: variants[0].recipe?.toppings || [],
+                portioning: {
+                    doughWeight: variants[0].recipe?.doughWeight || 40,
+                    finalWeight: variants[0].recipe?.finalWeight || 38
+                },
+                secondProof: {
+                    duration: parseFloat(formData.get('proofDuration')) || 45,
+                    temperature: parseFloat(formData.get('proofTemp')) || 32,
+                    humidity: parseFloat(formData.get('proofHumidity')) || 80
+                },
+                baking: {
+                    ovenTempTop: parseFloat(formData.get('ovenTempTop')) || 180,
+                    ovenTempBottom: parseFloat(formData.get('ovenTempBottom')) || 180,
+                    duration: parseFloat(formData.get('bakeDuration')) || 18,
+                    rotateAt: parseFloat(formData.get('rotateAt')) || 9
+                },
+                costs: {
+                    packaging: variants[0].recipe?.packagingCost || 0,
+                    labor: variants[0].recipe?.laborCost || 0
+                },
+                pricing: {
+                    markupPercent: variants[0].recipe?.markupPercent || 40
+                },
+                finalSRP: baseSRP,
+                hasVariants: true,
+                variants: variants,
+                notes: formData.get('notes') || ''
+            };
+        } else {
+            // ========== SINGLE RECIPE MODE ==========
+            // Collect fillings
+            const fillings = [];
+            document.querySelectorAll('#singleRecipeMode .filling-row').forEach(row => {
+                const idx = row.dataset.idx;
+                const recipeId = document.querySelector(`[name="filling_${idx}_id"]`)?.value;
+                const weight = parseFloat(document.querySelector(`[name="filling_${idx}_weight"]`)?.value) || 0;
+                if (recipeId && weight > 0) {
+                    fillings.push({ recipeId, weight });
+                }
+            });
+            
+            // Collect toppings
+            const toppings = [];
+            document.querySelectorAll('#singleRecipeMode .topping-row').forEach(row => {
+                const idx = row.dataset.idx;
+                const recipeId = document.querySelector(`[name="topping_${idx}_id"]`)?.value;
+                const weight = parseFloat(document.querySelector(`[name="topping_${idx}_weight"]`)?.value) || 0;
+                if (recipeId && weight > 0) {
+                    toppings.push({ recipeId, weight });
+                }
+            });
+            
+            data = {
+                name: formData.get('name'),
+                category: formData.get('category'),
+                mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                doughRecipeId: formData.get('doughRecipeId'),
+                fillings,
+                toppings,
+                portioning: {
+                    doughWeight: parseFloat(formData.get('doughWeight')) || 40,
+                    finalWeight: parseFloat(formData.get('finalWeight')) || 38
+                },
+                secondProof: {
+                    duration: parseFloat(formData.get('proofDuration')) || 45,
+                    temperature: parseFloat(formData.get('proofTemp')) || 32,
+                    humidity: parseFloat(formData.get('proofHumidity')) || 80
+                },
+                baking: {
+                    ovenTempTop: parseFloat(formData.get('ovenTempTop')) || 180,
+                    ovenTempBottom: parseFloat(formData.get('ovenTempBottom')) || 180,
+                    duration: parseFloat(formData.get('bakeDuration')) || 18,
+                    rotateAt: parseFloat(formData.get('rotateAt')) || 9
+                },
+                costs: {
+                    packaging: parseFloat(formData.get('packagingCost')) || 0,
+                    labor: parseFloat(formData.get('laborCost')) || 0
+                },
+                pricing: {
+                    markupPercent: parseFloat(formData.get('markupPercent')) || 40
+                },
+                finalSRP: parseFloat(formData.get('finalSRP')) || 0,
+                hasVariants: false,
+                variants: [],
+                notes: formData.get('notes') || ''
+            };
+            
+            // Validate based on category - only require dough for breads
+            const isBread = data.mainCategory === 'bread';
+            if (isBread && !data.doughRecipeId) {
+                Toast.error('Please select a dough recipe');
+                return;
+            }
+            
+            if (!data.finalSRP || data.finalSRP <= 0) {
+                Toast.error('Please enter the Final SRP (selling price for Loyverse)');
+                return;
+            }
+        }
+        
+        if (!data.name) {
+            Toast.error('Please enter a product name');
+            return;
+        }
         
         // Get existing shop data or create new
         const existingProduct = id ? this.data.find(p => p.id === id) : null;
+        
+        // Prepare shop variants for website display
+        const shopVariants = data.hasVariants ? data.variants.map(v => ({
+            name: v.name,
+            size: v.size || '',
+            price: v.price
+        })) : [];
+        
         data.shop = {
             isPublished: document.getElementById('shopIsPublished')?.checked || false,
             description: existingProduct?.shop?.description || '',
             fullDescription: existingProduct?.shop?.fullDescription || '',
             imageUrl: existingProduct?.shop?.imageUrl || '',
             images: existingProduct?.shop?.images || [],
-            hasVariants: existingProduct?.shop?.hasVariants || false,
-            variants: existingProduct?.shop?.variants || []
+            hasVariants: data.hasVariants,
+            variants: shopVariants
         };
-
-        if (!data.name || !data.doughRecipeId) {
-            Toast.error('Please fill product name and select a dough recipe');
-            return;
-        }
-        
-        if (!data.finalSRP || data.finalSRP <= 0) {
-            Toast.error('Please enter the Final SRP (selling price for Loyverse)');
-            return;
-        }
         
         try {
             let productId = id;
@@ -1136,6 +1739,95 @@ const Products = {
             console.error('Error saving product:', error);
             Toast.error('Failed to save product');
         }
+    },
+    
+    // Collect all variants from the form
+    collectVariants() {
+        const variants = [];
+        document.querySelectorAll('.variant-section').forEach(section => {
+            const idx = section.dataset.idx;
+            
+            const name = document.querySelector(`[name="variant_${idx}_name"]`)?.value?.trim();
+            const size = document.querySelector(`[name="variant_${idx}_size"]`)?.value?.trim() || '';
+            const price = parseFloat(document.querySelector(`[name="variant_${idx}_price"]`)?.value) || 0;
+            
+            // Collect variant recipe - BREADS fields
+            const doughRecipeId = document.querySelector(`[name="variant_${idx}_doughRecipeId"]`)?.value || '';
+            const doughWeight = parseFloat(document.querySelector(`[name="variant_${idx}_doughWeight"]`)?.value) || 40;
+            const finalWeight = parseFloat(document.querySelector(`[name="variant_${idx}_finalWeight"]`)?.value) || 38;
+            
+            // Collect variant recipe - DRINKS fields
+            const cupSize = parseFloat(document.querySelector(`[name="variant_${idx}_cupSize"]`)?.value) || 12;
+            
+            // Common fields
+            const packagingCost = parseFloat(document.querySelector(`[name="variant_${idx}_packagingCost"]`)?.value) || 0.50;
+            const laborCost = parseFloat(document.querySelector(`[name="variant_${idx}_laborCost"]`)?.value) || 1.00;
+            const markupPercent = parseFloat(document.querySelector(`[name="variant_${idx}_markupPercent"]`)?.value) || 40;
+            
+            // Collect variant fillings (for breads)
+            const fillings = [];
+            const fillingsContainer = document.getElementById(`variant_${idx}_fillings`);
+            if (fillingsContainer) {
+                fillingsContainer.querySelectorAll('.variant-filling-row').forEach((row, fidx) => {
+                    const recipeId = row.querySelector(`[name="variant_${idx}_filling_${fidx}_id"]`)?.value;
+                    const weight = parseFloat(row.querySelector(`[name="variant_${idx}_filling_${fidx}_weight"]`)?.value) || 0;
+                    if (recipeId && weight > 0) {
+                        fillings.push({ recipeId, weight });
+                    }
+                });
+            }
+            
+            // Collect variant toppings (for both breads and drinks)
+            const toppings = [];
+            const toppingsContainer = document.getElementById(`variant_${idx}_toppings`);
+            if (toppingsContainer) {
+                toppingsContainer.querySelectorAll('.variant-topping-row').forEach((row, tidx) => {
+                    const recipeId = row.querySelector(`[name="variant_${idx}_topping_${tidx}_id"]`)?.value;
+                    const weight = parseFloat(row.querySelector(`[name="variant_${idx}_topping_${tidx}_weight"]`)?.value) || 0;
+                    if (recipeId && weight > 0) {
+                        toppings.push({ recipeId, weight });
+                    }
+                });
+            }
+            
+            // Collect variant ingredients (for drinks)
+            const ingredients = [];
+            const ingredientsContainer = document.getElementById(`variant_${idx}_ingredients`);
+            if (ingredientsContainer) {
+                ingredientsContainer.querySelectorAll('.variant-ingredient-row').forEach((row, iidx) => {
+                    const ingredientId = row.querySelector(`[name="variant_${idx}_ingredient_${iidx}_id"]`)?.value;
+                    const amount = parseFloat(row.querySelector(`[name="variant_${idx}_ingredient_${iidx}_amount"]`)?.value) || 0;
+                    if (ingredientId && amount > 0) {
+                        ingredients.push({ ingredientId, amount });
+                    }
+                });
+            }
+            
+            if (name) {
+                variants.push({
+                    name,
+                    size,
+                    price,
+                    recipe: {
+                        // Breads fields
+                        doughRecipeId,
+                        doughWeight,
+                        finalWeight,
+                        fillings,
+                        // Drinks fields
+                        cupSize,
+                        ingredients,
+                        // Common fields
+                        toppings,
+                        packagingCost,
+                        laborCost,
+                        markupPercent
+                    }
+                });
+            }
+        });
+        
+        return variants;
     },
     
     async delete(id) {
