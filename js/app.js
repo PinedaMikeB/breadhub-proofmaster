@@ -42,6 +42,7 @@ const App = {
             // Load all other data in parallel
             await Promise.all([
                 Ingredients.init(),
+                PackagingMaterials.init(),
                 Doughs.init(),
                 Toppings.init(),
                 Fillings.init(),
@@ -127,6 +128,7 @@ const App = {
             timers: { title: 'Active Timers', subtitle: 'Monitor proofing and baking' },
             suppliers: { title: 'Suppliers', subtitle: 'Manage suppliers with location & delivery' },
             ingredients: { title: 'Ingredients', subtitle: 'Master ingredients with multiple suppliers' },
+            packaging: { title: 'Packaging Materials', subtitle: 'Cups, bags, pouches, boxes & more' },
             doughs: { title: 'Dough Recipes', subtitle: 'Manage dough recipes' },
             toppings: { title: 'Toppings', subtitle: 'Manage topping recipes' },
             fillings: { title: 'Fillings', subtitle: 'Manage filling recipes' },
@@ -153,6 +155,9 @@ const App = {
                 break;
             case 'ingredients':
                 Ingredients.render();
+                break;
+            case 'packaging':
+                PackagingMaterials.render();
                 break;
             case 'doughs':
                 Doughs.render();

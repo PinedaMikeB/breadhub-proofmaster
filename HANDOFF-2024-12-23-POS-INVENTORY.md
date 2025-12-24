@@ -1,256 +1,261 @@
-# BreadHub ProofMaster - Handoff Document
+# BreadHub - Handoff Document
 ## Date: December 23, 2024
-## Session: Variant Support Complete → POS & Inventory System
+## Session: POS System + Loyverse Import Created
 
 ---
 
-## COMPLETED IN THIS SESSION
+## PROJECT STRUCTURE
 
-### 1. Full Variant Support with Recipes ✅
-Each product can now have multiple variants (sizes/types), each with its **own complete recipe**:
+```
+BreadHub Ecosystem (Shared Firebase Database)
+├── ProofMaster (Production & Inventory)
+│   └── /Volumes/Wotg Drive Mike/GitHub/BreadHub ProofMaster/
+│
+├── POS System (NEW - Sales & Import)
+│   └── /Volumes/Wotg Drive Mike/GitHub/Breadhub-POS/
+│
+└── Website (E-commerce)
+    └── /Volumes/Wotg Drive Mike/GitHub/Breadhub-website/
 
-**For BREADS (mainCategory: 'bread'):**
-- 🥖 Dough Recipe + Weight
-- 🥥 Fillings + Weights  
-- 🧈 Toppings + Weights
-- Packaging, Labor, Markup costs
-
-**For DRINKS (mainCategory: 'drinks'):**
-- 🧪 Individual Ingredients (from Ingredients collection with cost/gram)
-- 🧈 Toppings (whip cream, etc.)
-- Cup Size, Packaging, Labor, Markup costs
-
-### 2. Real-time Cost Calculation per Variant ✅
-- Each variant shows live cost breakdown
-- Auto-calculates when ingredients/amounts change
-- Shows: Total Cost, Suggested SRP, Actual Margin
-- Margin color-coded (green ≥30%, yellow ≥20%, red <20%)
-
-### 3. Product Cards & View Modal ✅
-- Cards show variant count and price range
-- View modal displays all variants with their recipes
-
-### 4. Website Sync ✅
-- Variants save to `shop.hasVariants` and `shop.variants`
-- Website displays variant selector dropdown
-- Price updates when variant selected
+All apps share: breadhub-proofmaster Firebase project
+```
 
 ---
 
-## CURRENT SCHEMA
+## COMPLETED THIS SESSION
 
-### Product Document (Firebase: `products` collection)
+### 1. Packaging Materials Module ✅ (ProofMaster)
+- Full CRUD for cups, bags, pouches, boxes, straws, lids, etc.
+- Stock tracking with reorder alerts
+- Bulk import of 38 common items
+- Location: `js/packaging-materials.js`
+
+### 2. BreadHub POS System ✅ (NEW PROJECT)
+Complete POS system in `/Volumes/Wotg Drive Mike/GitHub/Breadhub-POS/`
+
+**Files Created:**
+```
+Breadhub-POS/
+├── index.html          # Main POS interface
+├── css/
+│   └── pos-styles.css  # Complete styling (971 lines)
+└── js/
+    ├── config.js       # Firebase config (shared with ProofMaster)
+    ├── firebase-init.js # Database connection
+    ├── utils.js        # Utility functions
+    ├── modal.js        # Modal component
+    ├── auth.js         # Authentication (shared users)
+    ├── pos.js          # Main POS functionality
+    ├── sales-import.js # Loyverse import system
+    ├── reports.js      # Sales reports
+    └── app.js          # App controller
+```
+
+**Features:**
+- 🛒 Product grid with category filtering
+- 🔍 Search products
+- 🛍️ Cart management with quantity controls
+- 💳 Checkout with Cash/GCash/Card
+- 🏷️ Discount support (fixed/percent)
+- 🧾 Receipt preview
+- 📥 Loyverse CSV import
+- 📊 Reports (Daily/Monthly/Products/Categories)
+
+### 3. Loyverse Import System ✅
+
+**Import Rules (As Requested):**
+1. ✅ ProofMaster product names = **FINAL** (never overwritten)
+2. ✅ ProofMaster costs = **TRUE** (Loyverse COGS ignored)
+3. ✅ Only sales data imported: quantity, amounts, dates
+
+**How It Works:**
+```
+Loyverse CSV → Parse → Map to ProofMaster Products → Import
+                         ↓
+               Uses TRUE costs from ProofMaster
+               (Loyverse costs are ignored!)
+```
+
+**Mapping System:**
+- First import requires mapping Loyverse names to ProofMaster products
+- Mappings saved to `productMapping` collection
+- Auto-map feature for similar names
+- Skip option for items not in ProofMaster
+
+---
+
+## FIREBASE COLLECTIONS
+
+### Shared Database: breadhub-proofmaster
+
+```
+Collections:
+├── users                  # Shared authentication
+├── products               # ProofMaster products (source of truth)
+├── ingredients            # Raw ingredients
+├── ingredientPrices       # Supplier pricing
+├── packagingMaterials     # NEW: Cups, bags, etc.
+├── doughs                 # Dough recipes
+├── fillings               # Filling recipes
+├── toppings               # Topping recipes
+├── suppliers              # Supplier info
+│
+├── sales                  # POS transactions (NEW)
+├── salesImports           # Loyverse import batches (NEW)
+├── productMapping         # Loyverse → ProofMaster mapping (NEW)
+│
+└── productionRuns         # Production history
+```
+
+### Sales Record Schema
 ```javascript
 {
-  name: "Avocado Shake",
-  category: "non-coffee",
-  mainCategory: "drinks",  // 'bread' | 'drinks'
+  saleId: "S-20241223-001",
+  dateKey: "2024-12-23",
+  timestamp: "ISO string",
   
-  // Base recipe (used when hasVariants=false, or first variant's recipe)
-  doughRecipeId: "",
-  fillings: [],
-  toppings: [],
-  portioning: { doughWeight: 40, finalWeight: 38 },
+  items: [{
+    productId: "xxx",
+    productName: "Malunggay Pandesal",
+    category: "pandesal",
+    variantIndex: null,
+    variantName: null,
+    quantity: 5,
+    unitPrice: 5,
+    lineTotal: 25
+  }],
   
-  // Variants
-  hasVariants: true,
-  variants: [
-    {
-      name: "Tall",
-      size: "12oz",
-      price: 140,
-      recipe: {
-        // For drinks:
-        ingredients: [{ ingredientId: "xxx", amount: 50 }],
-        toppings: [{ recipeId: "xxx", weight: 10 }],
-        cupSize: 12,
-        // For breads:
-        doughRecipeId: "xxx",
-        doughWeight: 40,
-        fillings: [{ recipeId: "xxx", weight: 15 }],
-        finalWeight: 38,
-        // Common:
-        packagingCost: 5,
-        laborCost: 1,
-        markupPercent: 40
-      }
-    }
-  ],
+  subtotal: 25,
+  discount: 0,
+  total: 25,
   
-  // Shop settings (synced to website)
-  shop: {
-    isPublished: true,
-    hasVariants: true,
-    variants: [{ name: "Tall", size: "12oz", price: 140 }],
-    imageUrl: "...",
-    description: "..."
+  paymentMethod: "cash",
+  cashReceived: 30,
+  change: 5,
+  
+  source: "pos",  // or "loyverse-import"
+  createdBy: "user_id"
+}
+```
+
+### Import Record Schema
+```javascript
+{
+  label: "Oct-Dec 2025",
+  importedAt: "ISO string",
+  source: "loyverse",
+  
+  summary: {
+    totalItems: 160,
+    importedItems: 150,
+    skippedItems: 10,
+    totalQuantity: 35000,
+    totalNetSales: 632317
   },
   
-  finalSRP: 140,  // Base price
-  costs: { packaging: 5, labor: 1 },
-  pricing: { markupPercent: 40 }
+  items: [{
+    loyverseName: "Malunggay Cheese Pandesal",
+    productId: "xxx",           // ProofMaster ID
+    productName: "Malunggay Pandesal",  // ProofMaster name
+    quantity: 20191,
+    netSales: 100435,
+    trueCostPerUnit: 2.71,      // FROM PROOFMASTER!
+    trueTotalCost: 54717.61,    // Calculated with TRUE cost
+    trueProfit: 45717.39,       // TRUE profit
+    trueMargin: 45.52           // TRUE margin
+  }],
+  
+  dailySummaries: [{...}]
 }
 ```
 
 ---
 
-## NEXT SESSION: POS & INVENTORY SYSTEM
+## LOYVERSE DATA ANALYSIS
 
-### User Requirements:
-1. **Add Packaging Materials** - Similar to Ingredients but separate category
-   - Paper bags, Pouches, Cups (12oz, 16oz, 22oz), Straws, etc.
-   - Track stock levels
-   - Include in product cost calculations
+Your Oct 13 - Dec 22, 2025 data:
 
-2. **Simple POS System** - Like Loyverse
-   - Select products/variants to sell
-   - Auto-deduct from inventory on sale
-   - Track daily sales
+| Month | Gross Sales | Daily Avg | Margin |
+|-------|-------------|-----------|--------|
+| October | ₱130,232 | ₱8,140 | 55.9% |
+| November | ₱281,670 | ₱11,736 | 56.0% |
+| December | ₱223,690 | ₱11,773 | 55.8% |
+| **TOTAL** | **₱635,592** | **₱10,773** | **55.9%** |
 
-### Suggested Implementation:
+**Top Products:**
+1. Malunggay Cheese Pandesal - 20,191 sold
+2. Spanish Bread - 1,850 sold (77.7% margin!)
+3. Coffee Bun - 664 sold
+4. Pan De Coco - 1,481 sold (79.5% margin!)
 
-#### 1. New Collection: `packagingMaterials`
-```javascript
-{
-  name: "Paper Cup 12oz",
-  category: "cups",  // cups, bags, pouches, straws, lids, other
-  unit: "pcs",
-  currentStock: 500,
-  reorderLevel: 100,
-  costPerUnit: 3.50,  // ₱3.50 per cup
-  supplierId: "xxx"
-}
+---
+
+## HOW TO USE
+
+### Running POS:
+1. Open `/Volumes/Wotg Drive Mike/GitHub/Breadhub-POS/index.html`
+2. Login with ProofMaster credentials
+3. Start selling!
+
+### Importing Loyverse Data:
+1. Click "📥 Import" in POS header
+2. Upload Item Sales CSV from Loyverse
+3. (Optional) Upload Daily Sales CSV
+4. Map unmapped products to ProofMaster
+5. Click Import
+
+### Hybrid Mode (Run Both):
 ```
+Daily Workflow:
+1. Use Loyverse during the day
+2. Export CSVs at end of day
+3. Import into BreadHub POS
+4. View unified reports
 
-**Suggested Categories:**
-- `cups` - Paper cups (12oz, 16oz, 22oz)
-- `lids` - Cup lids
-- `straws` - Straws
-- `bags` - Paper bags, plastic bags
-- `pouches` - Bread pouches, pastry bags
-- `boxes` - Cake boxes, pastry boxes
-- `containers` - Plastic containers
-- `other` - Misc packaging
+OR
 
-#### 2. New Collection: `sales` (for POS)
-```javascript
-{
-  date: Timestamp,
-  items: [
-    {
-      productId: "xxx",
-      productName: "Avocado Shake",
-      variantName: "Tall",
-      variantIndex: 0,
-      quantity: 2,
-      unitPrice: 140,
-      total: 280
-    }
-  ],
-  subtotal: 280,
-  discount: 0,
-  total: 280,
-  paymentMethod: "cash",
-  cashReceived: 300,
-  change: 20,
-  createdBy: "user_id",
-  createdAt: Timestamp
-}
-```
-
-#### 3. Inventory Deduction on Sale
-When a sale is completed:
-1. For each item sold, look up the product's recipe
-2. Deduct ingredients from `ingredients` collection (currentStock)
-3. Deduct packaging from `packagingMaterials` collection
-4. Record the sale in `sales` collection
-
-#### 4. Link Packaging to Products
-Update variant recipe to include packaging:
-```javascript
-recipe: {
-  ingredients: [...],
-  packaging: [
-    { materialId: "cup_12oz", quantity: 1 },
-    { materialId: "lid_12oz", quantity: 1 },
-    { materialId: "straw", quantity: 1 }
-  ]
-}
+1. Use BreadHub POS directly
+2. Sales recorded in real-time
+3. View reports anytime
 ```
 
 ---
 
-## FILE LOCATIONS
+## NEXT STEPS
 
-### ProofMaster
-- **Main App**: `/Volumes/Wotg Drive Mike/GitHub/BreadHub ProofMaster/`
-- **Products JS**: `js/products.js` (1860 lines - contains all variant logic)
-- **Ingredients JS**: `js/ingredients.js` (handles ingredient CRUD)
-- **Ingredient Prices**: `js/ingredient-prices.js` (cost per gram)
+### Immediate:
+1. **Test POS** - Open and verify it connects to Firebase
+2. **Import Loyverse Data** - Use the 3 CSV files you uploaded
+3. **Map Products** - First import will require mapping
 
-### Website
-- **Main Site**: `/Volumes/Wotg Drive Mike/GitHub/Breadhub-website/`
-- **Products Page**: `products.html` (already supports variants)
-- **Product Template**: `products/template.html`
+### Soon:
+1. **Inventory Deduction** - Auto-deduct ingredients/packaging on sale
+2. **Link Packaging to Products** - Add packaging to variant recipes
+3. **Receipt Printing** - Add print support
 
-### Firebase Collections
-- `products` - Product catalog with variants
-- `ingredients` - Raw ingredients (flour, milk, sugar)
-- `ingredientPrices` - Price per gram from suppliers
-- `doughs` - Dough recipes
-- `fillings` - Filling recipes
-- `toppings` - Topping recipes
-- `suppliers` - Supplier info
+### Future:
+1. **Employee Management** - Shifts, access levels
+2. **Cash Drawer** - Opening/closing counts
+3. **Inventory Alerts** - Low stock notifications
 
 ---
 
 ## GIT STATUS
 
-### ProofMaster
-- **Latest Commit**: `b0da6de` - Add full variant support with recipes and cost calculations
-- **Branch**: main
-- **Remote**: https://github.com/PinedaMikeB/breadhub-proofmaster.git
+### ProofMaster (to commit):
+- `js/packaging-materials.js` (NEW)
+- `js/app.js` (updated)
+- `index.html` (updated)
 
-### Website
-- **Latest Commit**: `0ba5c41` - Fix: Remove composite index requirement
-- **Branch**: main  
-- **Remote**: https://github.com/BreadHub-Shop/breadhub-website.git
-- **Live URL**: https://breadhub.shop
-
----
-
-## RECOMMENDED APPROACH FOR NEXT SESSION
-
-1. **Create Packaging Materials module** (`js/packaging-materials.js`)
-   - CRUD for packaging items
-   - Stock tracking
-   - Reorder alerts
-
-2. **Add Packaging to variant recipes**
-   - Update variant UI to include packaging selection
-   - Update cost calculation to include packaging materials
-
-3. **Create Simple POS module** (`js/pos.js`)
-   - Product selector with search
-   - Variant selector
-   - Cart management
-   - Checkout with inventory deduction
-
-4. **Create Sales History** (`js/sales.js`)
-   - Daily sales report
-   - Product performance
-   - Inventory alerts
-
----
-
-## NOTES
-
-- The Ingredients module already has stock tracking (`currentStock` field)
-- IngredientPrices has `getCheapest()` for cost calculation
-- Products.updateVariantCost() can be extended to include packaging
-- Consider using the same pattern as Ingredients for PackagingMaterials
+### POS (new repo to initialize):
+```bash
+cd "/Volumes/Wotg Drive Mike/GitHub/Breadhub-POS"
+git init
+git add .
+git commit -m "Initial BreadHub POS with Loyverse import"
+```
 
 ---
 
 *Generated: December 23, 2024*
-*Session Duration: Variant implementation complete*
+*Session: POS System + Loyverse Import Complete*
