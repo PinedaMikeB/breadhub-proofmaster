@@ -267,10 +267,12 @@ const PurchaseRequests = {
             `• ${item.ingredientName}: ${item.packagesNeeded} × ${item.packageSize}g = ${(item.packagesNeeded * item.packageSize / 1000).toFixed(2)}kg`
         ).join('\n');
         
-        if (!confirm(`Mark as received and add to inventory?\n\nItems:\n${itemsList}\n\nThis will update stock levels.`)) return;
+        if (!confirm(`Mark as received and add to inventory?\n\nItems:\n${itemsList}\n\nThis will update stock levels and prices.`)) return;
         
         try {
-            // Update inventory for each item
+            const now = new Date().toISOString();
+            
+            // Update inventory AND prices for each item
             for (const item of req.items) {
                 const ingredient = Ingredients.data.find(i => i.id === item.ingredientId);
                 if (ingredient) {
@@ -279,13 +281,37 @@ const PurchaseRequests = {
                     
                     await DB.update('ingredients', item.ingredientId, {
                         currentStock: newStock,
-                        lastRestockedAt: new Date().toISOString()
+                        lastRestockedAt: now
                     });
                     
                     // Update local data
                     ingredient.currentStock = newStock;
                 }
+                
+                // ====== UPDATE INGREDIENT PRICE with lastPurchaseDate ======
+                // This ensures recipe costing uses the most recent purchase price
+                if (item.selectedSupplierId) {
+                    const priceRecord = IngredientPrices.data.find(p => 
+                        p.ingredientId === item.ingredientId && 
+                        p.supplierId === item.selectedSupplierId
+                    );
+                    
+                    if (priceRecord) {
+                        await DB.update('ingredientPrices', priceRecord.id, {
+                            lastPurchaseDate: now,
+                            lastPurchaseRequestId: requestId,
+                            // Update price if it changed
+                            purchasePrice: item.unitPrice,
+                            packageSize: item.packageSize,
+                            costPerGram: item.unitPrice / item.packageSize
+                        });
+                        console.log(`💰 Updated price for ${item.ingredientName}: ₱${item.unitPrice}/${item.packageSize}g`);
+                    }
+                }
             }
+            
+            // Reload ingredient prices to reflect changes
+            await IngredientPrices.load();
             
             // Update PO status
             await DB.update('purchaseRequests', requestId, {
