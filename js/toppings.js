@@ -196,25 +196,139 @@ const Toppings = {
     },
 
     getIngredientRow(ing = {}, idx = 0) {
-        const ingredientOptions = Ingredients.data.map(i => 
-            `<option value="${i.id}" ${ing.ingredientId === i.id ? 'selected' : ''}>${i.name}</option>`
-        ).join('');
+        const selectedIngredient = ing.ingredientId ? Ingredients.getById(ing.ingredientId) : null;
+        
+        // Calculate initial cost
+        let rowCost = 0;
+        if (selectedIngredient && ing.amount) {
+            const costPerGram = Ingredients.getCostPerGram(ing.ingredientId);
+            rowCost = costPerGram * ing.amount;
+        }
         
         return `
-            <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <select name="ing_${idx}_id" class="form-select topping-ing-select" style="flex: 2;" onchange="Toppings.updateCalculation()">
-                    <option value="">Select ingredient...</option>
-                    ${ingredientOptions}
-                </select>
-                <input type="number" name="ing_${idx}_amount" class="form-input topping-ing-amount" 
-                       value="${ing.amount || ''}" placeholder="Amount (g)" style="flex: 1;" oninput="Toppings.updateCalculation()">
-                <select name="ing_${idx}_unit" class="form-select" style="flex: 1;">
+            <div class="ingredient-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+                <div class="ingredient-select-wrapper" style="flex: 2; position: relative;">
+                    <input 
+                        type="text" 
+                        class="form-input topping-ing-search" 
+                        placeholder="Type to search ingredients..."
+                        value="${selectedIngredient ? selectedIngredient.name : ''}"
+                        data-idx="${idx}"
+                        autocomplete="off"
+                        onfocus="Toppings.showIngredientDropdown(${idx})"
+                        oninput="Toppings.filterIngredients(${idx}, this.value)"
+                    />
+                    <input 
+                        type="hidden" 
+                        name="ing_${idx}_id" 
+                        class="topping-ing-select" 
+                        value="${ing.ingredientId || ''}"
+                    />
+                    <div 
+                        id="ingredientDropdown_${idx}" 
+                        class="ingredient-dropdown" 
+                        style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"
+                    >
+                        ${this.getIngredientOptions(ing.ingredientId)}
+                    </div>
+                </div>
+                <input 
+                    type="number" 
+                    name="ing_${idx}_amount" 
+                    class="form-input topping-ing-amount" 
+                    value="${ing.amount || ''}" 
+                    placeholder="Amount" 
+                    style="flex: 0 0 100px;" 
+                    oninput="Toppings.updateCalculation()"
+                />
+                <select name="ing_${idx}_unit" class="form-select" style="flex: 0 0 70px;">
                     <option value="g" ${ing.unit === 'g' ? 'selected' : ''}>g</option>
                     <option value="mL" ${ing.unit === 'mL' ? 'selected' : ''}>mL</option>
                 </select>
-                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove(); Toppings.updateCalculation();">×</button>
+                <div 
+                    class="ingredient-row-cost" 
+                    data-idx="${idx}"
+                    style="flex: 0 0 80px; text-align: right; font-weight: 600; color: var(--primary); font-size: 0.9rem;"
+                >
+                    ${Utils.formatCurrency(rowCost)}
+                </div>
+                <button type="button" class="btn btn-danger" style="flex: 0 0 40px; padding: 8px;" onclick="this.parentElement.remove(); Toppings.updateCalculation();">×</button>
             </div>
         `;
+    },
+    
+    getIngredientOptions(selectedId = null, filterText = '') {
+        const filter = filterText.toLowerCase();
+        const filtered = Ingredients.data.filter(i => 
+            !filterText || i.name.toLowerCase().includes(filter)
+        );
+        
+        if (filtered.length === 0) {
+            return '<div style="padding: 8px; text-align: center; color: #999;">No ingredients found</div>';
+        }
+        
+        return filtered.map(i => `
+            <div 
+                class="ingredient-option ${i.id === selectedId ? 'selected' : ''}" 
+                data-id="${i.id}" 
+                data-name="${i.name}"
+                style="padding: 8px 12px; cursor: pointer; ${i.id === selectedId ? 'background: #E3F2FD;' : ''}"
+                onmouseenter="this.style.background='#f5f5f5'"
+                onmouseleave="this.style.background='${i.id === selectedId ? '#E3F2FD' : 'white'}'"
+            >
+                ${i.name}
+            </div>
+        `).join('');
+    },
+    
+    showIngredientDropdown(idx) {
+        // Hide all other dropdowns
+        document.querySelectorAll('.ingredient-dropdown').forEach(dd => {
+            if (dd.id !== `ingredientDropdown_${idx}`) {
+                dd.style.display = 'none';
+            }
+        });
+        
+        const dropdown = document.getElementById(`ingredientDropdown_${idx}`);
+        if (dropdown) {
+            dropdown.style.display = 'block';
+            this.attachDropdownListeners(idx);
+        }
+    },
+    
+    filterIngredients(idx, searchText) {
+        const dropdown = document.getElementById(`ingredientDropdown_${idx}`);
+        if (!dropdown) return;
+        
+        dropdown.innerHTML = this.getIngredientOptions(null, searchText);
+        dropdown.style.display = 'block';
+        this.attachDropdownListeners(idx);
+    },
+    
+    attachDropdownListeners(idx) {
+        const dropdown = document.getElementById(`ingredientDropdown_${idx}`);
+        if (!dropdown) return;
+        
+        dropdown.querySelectorAll('.ingredient-option').forEach(option => {
+            option.onclick = () => {
+                const id = option.dataset.id;
+                const name = option.dataset.name;
+                
+                // Set the hidden input value
+                const hiddenInput = dropdown.parentElement.querySelector(`[name="ing_${idx}_id"]`);
+                if (hiddenInput) hiddenInput.value = id;
+                
+                // Set the search box value
+                const searchInput = dropdown.parentElement.querySelector('.topping-ing-search');
+                if (searchInput) searchInput.value = name;
+                
+                // Hide dropdown
+                dropdown.style.display = 'none';
+                
+                // Update calculation
+                this.updateCalculation();
+            };
+        });
     },
     
     setupCalculation() {
@@ -222,6 +336,16 @@ const Toppings = {
         if (servingInput) {
             servingInput.addEventListener('input', () => this.updateCalculation());
         }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.ingredient-select-wrapper')) {
+                document.querySelectorAll('.ingredient-dropdown').forEach(dd => {
+                    dd.style.display = 'none';
+                });
+            }
+        });
+        
         // Initial calculation
         setTimeout(() => this.updateCalculation(), 100);
     },
@@ -230,20 +354,29 @@ const Toppings = {
         let totalWeight = 0;
         let totalCost = 0;
         
-        // Sum all ingredients
+        // Sum all ingredients and update row costs
         document.querySelectorAll('#toppingIngredientsList .ingredient-row').forEach(row => {
-            const select = row.querySelector('.topping-ing-select');
+            const hiddenInput = row.querySelector('.topping-ing-select');
             const amountInput = row.querySelector('.topping-ing-amount');
+            const costDisplay = row.querySelector('.ingredient-row-cost');
             
-            const ingredientId = select?.value;
+            const ingredientId = hiddenInput?.value;
             const amount = parseFloat(amountInput?.value) || 0;
             
+            // Calculate and display row cost
+            let rowCost = 0;
             if (ingredientId && amount > 0) {
                 totalWeight += amount;
                 
                 // Get cost per gram for this ingredient
                 const costPerGram = Ingredients.getCostPerGram(ingredientId);
-                totalCost += costPerGram * amount;
+                rowCost = costPerGram * amount;
+                totalCost += rowCost;
+            }
+            
+            // Update the row cost display
+            if (costDisplay) {
+                costDisplay.textContent = Utils.formatCurrency(rowCost);
             }
         });
         

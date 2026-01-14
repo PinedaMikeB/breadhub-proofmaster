@@ -47,7 +47,37 @@ const Ingredients = {
             return;
         }
         
-        tbody.innerHTML = this.data.map(ing => {
+        // Get search value if it exists
+        const searchBox = document.getElementById('ingredientSearchBox');
+        const searchValue = searchBox ? searchBox.value.toLowerCase() : '';
+        
+        // Filter data based on search
+        let filteredData = this.data;
+        if (searchValue) {
+            filteredData = this.data.filter(ing => {
+                const nameMatch = ing.name.toLowerCase().includes(searchValue);
+                const categoryMatch = ing.category && ing.category.toLowerCase().includes(searchValue);
+                const supplier = IngredientPrices.getPriceForCosting(ing.id);
+                const supplierObj = supplier ? Suppliers.getById(supplier.supplierId) : null;
+                const supplierMatch = supplierObj && supplierObj.companyName.toLowerCase().includes(searchValue);
+                
+                return nameMatch || categoryMatch || supplierMatch;
+            });
+        }
+        
+        // If no results after filtering
+        if (filteredData.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="empty-state">
+                        No ingredients found matching "${searchValue}"
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = filteredData.map(ing => {
             // Get costing price
             const costPrice = IngredientPrices.getPriceForCosting(ing.id);
             const supplierCount = IngredientPrices.getByIngredient(ing.id).length;
@@ -90,6 +120,11 @@ const Ingredients = {
                 </tr>
             `;
         }).join('');
+    },
+    
+    // Filter table based on search input
+    filterTable(searchValue) {
+        this.render(); // Re-render with the search filter applied
     },
     
     // Format stock for display (convert grams to kg if >= 1000)

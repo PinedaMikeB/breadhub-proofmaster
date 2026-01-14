@@ -90,6 +90,39 @@ const Products = {
         this.render();
     },
     
+    // Search/filter functionality
+    filterCards(searchTerm) {
+        const grid = document.getElementById('productsGrid');
+        if (!grid) return;
+        
+        const cards = grid.querySelectorAll('.recipe-card');
+        const term = searchTerm.toLowerCase().trim();
+        
+        if (!term) {
+            // Show all cards if search is empty
+            cards.forEach(card => card.style.display = '');
+            return;
+        }
+        
+        cards.forEach(card => {
+            const productId = card.getAttribute('data-id');
+            const product = this.data.find(p => p.id === productId);
+            
+            if (product) {
+                // Search in name and category
+                const name = (product.name || '').toLowerCase();
+                const category = (product.category || '').toLowerCase();
+                const categoryLabel = this.formatCategory(product.category).toLowerCase();
+                
+                const matches = name.includes(term) || 
+                               category.includes(term) || 
+                               categoryLabel.includes(term);
+                
+                card.style.display = matches ? '' : 'none';
+            }
+        });
+    },
+    
     async loadCategories() {
         try {
             const stored = await DB.getAll('productCategories');
@@ -179,14 +212,30 @@ const Products = {
             // Get website status from unified schema
             const shopStatus = this.getShopStatus(product);
             
+            // Get today's stock from Inventory module
+            const stockInfo = this.getProductStock(product.id);
+            
             // Get main category
             const mainCat = product.mainCategory || this.getMainCategory(product.category);
             const mainCatBadge = mainCat === 'bread' 
                 ? '<span style="font-size:0.7rem;padding:2px 6px;background:#FFF3E0;color:#E65100;border-radius:10px;">🍞</span>'
                 : '<span style="font-size:0.7rem;padding:2px 6px;background:#E3F2FD;color:#1565C0;border-radius:10px;">🥤</span>';
             
+            // Stock badge
+            let stockBadge = '';
+            if (stockInfo && stockInfo.hasRecord) {
+                if (stockInfo.status === 'out') {
+                    stockBadge = '<span style="position:absolute;top:8px;right:8px;background:#FFEBEE;color:#C62828;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;">OUT OF STOCK</span>';
+                } else if (stockInfo.status === 'low') {
+                    stockBadge = `<span style="position:absolute;top:8px;right:8px;background:#FFF3E0;color:#E65100;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;">LOW: ${stockInfo.sellable}</span>`;
+                } else {
+                    stockBadge = `<span style="position:absolute;top:8px;right:8px;background:#E8F5E9;color:#2E7D32;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;">📦 ${stockInfo.sellable}</span>`;
+                }
+            }
+            
             return `
-            <div class="recipe-card" data-id="${product.id}">
+            <div class="recipe-card" data-id="${product.id}" style="position:relative;">
+                ${stockBadge}
                 <div class="recipe-card-header" style="background: linear-gradient(135deg, ${mainCat === 'bread' ? '#8E44AD, #9B59B6' : '#1565C0, #42A5F5'});">
                     <h3>${product.name}</h3>
                     <span class="version">${this.formatCategoryWithEmoji(product.category)}</span>
@@ -278,6 +327,33 @@ const Products = {
                 color: '#E3F2FD'
             };
         }
+    },
+    
+    // Get today's stock from Inventory module
+    getProductStock(productId) {
+        // Check if Inventory module is loaded and has data
+        if (typeof Inventory === 'undefined' || !Inventory.dailyRecords) {
+            return null;
+        }
+        
+        const record = Inventory.dailyRecords.find(r => r.productId === productId);
+        if (!record) {
+            return { hasRecord: false, sellable: 0, status: 'none' };
+        }
+        
+        const stock = Inventory.calculateStock(record);
+        let status = 'ok';
+        if (stock.sellable <= 0) status = 'out';
+        else if (stock.sellable <= 5) status = 'low';
+        
+        return {
+            hasRecord: true,
+            sellable: stock.sellable,
+            reserved: stock.reserved,
+            sold: stock.sold,
+            total: stock.totalAvailable,
+            status: status
+        };
     },
     
     formatCategory(cat) {

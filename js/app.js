@@ -47,7 +47,8 @@ const App = {
                 Toppings.init(),
                 Fillings.init(),
                 Products.init(),
-                PurchaseRequests.init()
+                PurchaseRequests.init(),
+                Inventory.init()
             ]);
             
             // Load users if admin
@@ -124,6 +125,7 @@ const App = {
     updateHeader(viewName) {
         const titles = {
             dashboard: { title: 'Dashboard', subtitle: 'Production overview' },
+            inventory: { title: 'Inventory', subtitle: 'Stock tracking & management' },
             production: { title: 'New Production', subtitle: 'Plan your production run' },
             timers: { title: 'Active Timers', subtitle: 'Monitor proofing and baking' },
             suppliers: { title: 'Suppliers', subtitle: 'Manage suppliers with location & delivery' },
@@ -149,6 +151,9 @@ const App = {
         switch (viewName) {
             case 'dashboard':
                 this.refreshDashboard();
+                break;
+            case 'inventory':
+                Inventory.render();
                 break;
             case 'suppliers':
                 Suppliers.render();
