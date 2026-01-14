@@ -335,11 +335,14 @@ const Inventory = {
                             ` : ''}
                             ${Auth.hasRole('admin') ? `
                                 <button class="btn btn-secondary btn-sm" onclick="Inventory.showAdjustModal('${record.productId}')" style="flex:1;background:#FFF3E0;border-color:#FF9800;">
-                                    ✏️ Adjust
+                                    ✏️
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="Inventory.syncSingleProduct('${record.productId}')" style="flex:1;background:#E3F2FD;border-color:#1976D2;">
+                                    🔄
                                 </button>
                             ` : ''}
                             <button class="btn btn-secondary btn-sm" onclick="Inventory.showSingleEndCount('${record.productId}')" style="flex:1;">
-                                🌙 Count
+                                🌙
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="Inventory.showMovements('${record.productId}')" style="flex:1;">
                                 📋
@@ -821,6 +824,70 @@ const Inventory = {
         } catch (error) {
             console.error('Error saving adjustment:', error);
             Toast.error('Failed to save adjustment');
+        }
+    },
+
+    // ===== SYNC SINGLE PRODUCT WITH POS =====
+    async syncSingleProduct(productId) {
+        // Password prompt
+        const password = prompt('Enter admin password to sync:');
+        if (password !== '1185') {
+            Toast.error('Invalid password');
+            return;
+        }
+        
+        const record = this.dailyRecords.find(r => r.productId === productId);
+        if (!record) return;
+        
+        const today = this.getTodayString();
+        
+        try {
+            Toast.info(`Syncing ${record.productName}...`);
+            
+            // Get all sales for today containing this product
+            const salesSnapshot = await db.collection('sales')
+                .where('dateKey', '==', today)
+                .get();
+            
+            // Count sold for this product
+            let soldQty = 0;
+            salesSnapshot.forEach(doc => {
+                const sale = doc.data();
+                if (sale.items && Array.isArray(sale.items)) {
+                    sale.items.forEach(item => {
+                        if (item.productId === productId) {
+                            soldQty += (item.quantity || 1);
+                        }
+                    });
+                }
+            });
+            
+            const oldSold = record.soldQty || 0;
+            
+            // Update the record
+            const docId = `${today}_${productId}`;
+            await db.collection('dailyInventory').doc(docId).update({
+                soldQty: soldQty,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Log if changed
+            if (soldQty !== oldSold) {
+                await this.createStockMovement({
+                    productId: productId,
+                    type: 'sync',
+                    qty: -(soldQty - oldSold),
+                    date: today,
+                    notes: `Synced with POS: ${oldSold} → ${soldQty} sold`,
+                    performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                });
+            }
+            
+            Toast.success(`${record.productName}: ${soldQty} sold (was ${oldSold})`);
+            
+        } catch (error) {
+            console.error('Error syncing product:', error);
+            Toast.error('Failed to sync: ' + error.message);
         }
     },
 
