@@ -710,6 +710,113 @@ const Inventory = {
         }
     },
 
+    // ===== ADJUST BEGINNING/SOLD (Admin Only) =====
+    showAdjustModal(productId) {
+        const record = this.dailyRecords.find(r => r.productId === productId);
+        if (!record) return;
+        
+        const stock = this.calculateStock(record);
+        
+        Modal.open({
+            title: `✏️ Adjust - ${record.productName}`,
+            content: `
+                <p style="color:#666;margin-bottom:16px;">
+                    Correct the beginning stock or sold quantity.
+                </p>
+                
+                <div style="background:#F5F5F5;padding:12px;border-radius:8px;margin-bottom:16px;">
+                    <div style="font-size:0.85rem;color:#666;margin-bottom:4px;">Current Values:</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <div>Beginning: <strong>${stock.totalAvailable}</strong></div>
+                        <div>Sold: <strong>${stock.sold}</strong></div>
+                        <div>Sellable: <strong>${stock.sellable}</strong></div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Beginning Stock</label>
+                    <input type="number" id="adjBeginning" class="form-input" min="0" 
+                           value="${record.totalAvailable || 0}" placeholder="Total morning count">
+                    <small style="color:#666;">The original count at start of day</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Sold Quantity</label>
+                    <input type="number" id="adjSold" class="form-input" min="0" 
+                           value="${record.soldQty || 0}" placeholder="Items sold so far">
+                    <small style="color:#666;">Total sold (will be auto-updated by POS going forward)</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Reason for Adjustment</label>
+                    <input type="text" id="adjReason" class="form-input" 
+                           placeholder="e.g., Corrected miscount, Initial setup">
+                </div>
+            `,
+            saveText: 'Save Adjustment',
+            onSave: () => this.saveAdjustment(productId, stock)
+        });
+    },
+    
+    async saveAdjustment(productId, oldStock) {
+        const newBeginning = parseInt(document.getElementById('adjBeginning').value) || 0;
+        const newSold = parseInt(document.getElementById('adjSold').value) || 0;
+        const reason = document.getElementById('adjReason').value.trim();
+        
+        if (!reason) {
+            Toast.error('Please enter a reason for the adjustment');
+            return;
+        }
+        
+        try {
+            const date = this.getTodayString();
+            const docId = `${date}_${productId}`;
+            const record = this.dailyRecords.find(r => r.productId === productId);
+            
+            // Calculate what changed
+            const begDiff = newBeginning - (record.totalAvailable || 0);
+            const soldDiff = newSold - (record.soldQty || 0);
+            
+            // Update the record
+            await db.collection('dailyInventory').doc(docId).update({
+                newProductionQty: newBeginning, // Since carryover is 0, this equals totalAvailable
+                totalAvailable: newBeginning,
+                soldQty: newSold,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Log the adjustment
+            if (begDiff !== 0) {
+                await this.createStockMovement({
+                    productId: productId,
+                    type: 'adjustment',
+                    qty: begDiff,
+                    date: date,
+                    notes: `Beginning adjusted: ${oldStock.totalAvailable} → ${newBeginning}. ${reason}`,
+                    performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                });
+            }
+            
+            if (soldDiff !== 0) {
+                await this.createStockMovement({
+                    productId: productId,
+                    type: 'adjustment',
+                    qty: -soldDiff,
+                    date: date,
+                    notes: `Sold adjusted: ${oldStock.sold} → ${newSold}. ${reason}`,
+                    performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                });
+            }
+            
+            Modal.close();
+            Toast.success('Adjustment saved');
+            
+        } catch (error) {
+            console.error('Error saving adjustment:', error);
+            Toast.error('Failed to save adjustment');
+        }
+    },
+
     // ===== STOCK MOVEMENTS =====
     async createStockMovement(data) {
         const movement = {
