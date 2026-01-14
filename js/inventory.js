@@ -826,22 +826,46 @@ const Inventory = {
                 
                 <div class="form-group">
                     <label>Reason for Adjustment</label>
-                    <input type="text" id="adjReason" class="form-input" 
-                           placeholder="e.g., Corrected miscount, Initial setup">
+                    <select id="adjReason" class="form-input">
+                        <option value="">-- Select reason --</option>
+                        <option value="Corrected miscount">Corrected miscount</option>
+                        <option value="Stale/Expired - discarded">🗑️ Stale/Expired - discarded</option>
+                        <option value="Employee meal">🍽️ Employee meal</option>
+                        <option value="Taste test/sample">🧪 Taste test/sample</option>
+                        <option value="Breakage/damaged">💔 Breakage/damaged</option>
+                        <option value="Given to customer (free)">🎁 Given to customer (free)</option>
+                        <option value="Initial setup">📋 Initial setup</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="adjOtherReasonGroup" style="display:none;">
+                    <label>Specify Other Reason</label>
+                    <input type="text" id="adjOtherReason" class="form-input" placeholder="Enter reason...">
                 </div>
             `,
             saveText: 'Save Adjustment',
             onSave: () => this.saveAdjustment(productId, stock)
         });
+        
+        // Show/hide "Other" text field
+        document.getElementById('adjReason').addEventListener('change', (e) => {
+            const otherGroup = document.getElementById('adjOtherReasonGroup');
+            otherGroup.style.display = e.target.value === 'Other' ? 'block' : 'none';
+        });
     },
     
     async saveAdjustment(productId, oldStock) {
+        let reason = document.getElementById('adjReason').value;
+        if (reason === 'Other') {
+            reason = document.getElementById('adjOtherReason').value.trim();
+        }
+        
         const newBeginning = parseInt(document.getElementById('adjBeginning').value) || 0;
         const newSold = parseInt(document.getElementById('adjSold').value) || 0;
-        const reason = document.getElementById('adjReason').value.trim();
         
         if (!reason) {
-            Toast.error('Please enter a reason for the adjustment');
+            Toast.error('Please select a reason for the adjustment');
             return;
         }
         
