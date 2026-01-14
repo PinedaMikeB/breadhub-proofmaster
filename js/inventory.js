@@ -155,7 +155,7 @@ const Inventory = {
                     ${!isToday ? `<button class="btn btn-secondary" onclick="Inventory.goToToday()">Today</button>` : ''}
                 </div>
 
-                ${isToday && Auth.currentUser ? `
+                ${isToday ? `
                     <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
                         + Add Stock
                     </button>
@@ -167,8 +167,6 @@ const Inventory = {
                     <button class="btn btn-secondary" onclick="Inventory.showEndOfDayModal()" style="background:#FFF3E0;border-color:#FF9800;color:#E65100;">
                         🌙 End of Day Count
                     </button>
-                ` : ''}
-                ${isToday && Auth.hasRole('admin') && this.dailyRecords.length > 0 ? `
                     <button class="btn btn-secondary" onclick="Inventory.reconcileWithPOS()" style="background:#E3F2FD;border-color:#1976D2;color:#1565C0;">
                         🔄 Reconcile with POS
                     </button>
@@ -210,9 +208,12 @@ const Inventory = {
                     <div style="font-size: 3rem; margin-bottom: 16px;">📦</div>
                     <h3>No Inventory Records</h3>
                     <p>No stock has been recorded for ${this.formatDate(this.selectedDate)}.</p>
-                    ${isToday && Auth.currentUser ? `
+                    ${isToday ? `
                         <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
                             + Add First Stock
+                        </button>
+                        <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()" style="margin-top: 16px; margin-left: 8px;">
+                            📦 Process Carryover
                         </button>
                     ` : ''}
                 </div>
