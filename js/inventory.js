@@ -987,7 +987,10 @@ const Inventory = {
         // Get yesterday's records that haven't been carried over yet
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const year = yesterday.getFullYear();
+        const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+        const day = String(yesterday.getDate()).padStart(2, '0');
+        const yesterdayStr = `${year}-${month}-${day}`;
         const todayStr = this.getTodayString();
         
         try {
