@@ -780,6 +780,10 @@ const Inventory = {
     showAdjustModal(productId) {
         // Password prompt
         const password = prompt('Enter admin password to adjust:');
+        if (password === null) {
+            // User clicked Cancel
+            return;
+        }
         if (password !== '1185') {
             Toast.error('Invalid password');
             return;
@@ -894,6 +898,9 @@ const Inventory = {
     async syncSingleProduct(productId) {
         // Password prompt
         const password = prompt('Enter admin password to sync:');
+        if (password === null) {
+            return;
+        }
         if (password !== '1185') {
             Toast.error('Invalid password');
             return;
@@ -1694,6 +1701,9 @@ const Inventory = {
     async reconcileWithPOS() {
         // Password prompt
         const password = prompt('Enter admin password to reconcile:');
+        if (password === null) {
+            return;
+        }
         if (password !== '1185') {
             Toast.error('Invalid password');
             return;
