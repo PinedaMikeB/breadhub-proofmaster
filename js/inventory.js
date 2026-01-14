@@ -1459,11 +1459,6 @@ const Inventory = {
                 .where('dateKey', '==', today)
                 .get();
             
-            if (salesSnapshot.empty) {
-                Toast.warning('No POS sales found for today');
-                return;
-            }
-            
             // Aggregate sold quantities by productId
             const soldByProduct = {};
             let totalSales = 0;
@@ -1482,45 +1477,117 @@ const Inventory = {
             });
             
             console.log('Sales aggregated:', soldByProduct);
-            console.log('Total sales transactions:', totalSales);
             
-            // Update dailyInventory records with sold quantities
+            // Build comparison table
+            let tableRows = '';
+            let totalBeg = 0;
+            let totalSold = 0;
+            let totalBalance = 0;
+            
+            for (const record of this.dailyRecords) {
+                const beg = record.totalAvailable || 0;
+                const sold = soldByProduct[record.productId] || 0;
+                const balance = beg - sold;
+                
+                totalBeg += beg;
+                totalSold += sold;
+                totalBalance += balance;
+                
+                const balanceColor = balance < 0 ? '#C62828' : balance <= 5 ? '#E65100' : '#2E7D32';
+                
+                tableRows += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:8px;text-align:left;">${record.productName}</td>
+                        <td style="padding:8px;text-align:center;font-weight:600;">${beg}</td>
+                        <td style="padding:8px;text-align:center;font-weight:600;color:#C62828;">${sold > 0 ? sold : '-'}</td>
+                        <td style="padding:8px;text-align:center;font-weight:600;color:${balanceColor};">${balance}</td>
+                    </tr>
+                `;
+            }
+            
+            // Show modal with comparison
+            Modal.open({
+                title: '🔄 Reconcile with POS Sales',
+                content: `
+                    <div style="margin-bottom:12px;padding:12px;background:#E3F2FD;border-radius:8px;">
+                        <strong>POS Data:</strong> ${totalSales} transactions found for today
+                    </div>
+                    
+                    <div style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:8px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                            <thead style="background:#F5F5F5;position:sticky;top:0;">
+                                <tr>
+                                    <th style="padding:10px;text-align:left;">Product</th>
+                                    <th style="padding:10px;text-align:center;">Beginning</th>
+                                    <th style="padding:10px;text-align:center;">Sold</th>
+                                    <th style="padding:10px;text-align:center;">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                            </tbody>
+                            <tfoot style="background:#FFF8E1;font-weight:bold;">
+                                <tr>
+                                    <td style="padding:10px;">TOTAL</td>
+                                    <td style="padding:10px;text-align:center;">${totalBeg}</td>
+                                    <td style="padding:10px;text-align:center;color:#C62828;">${totalSold}</td>
+                                    <td style="padding:10px;text-align:center;">${totalBalance}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top:12px;padding:12px;background:#FFF3E0;border-radius:8px;font-size:0.9rem;">
+                        ⚠️ Clicking "Apply" will update the <strong>Sold</strong> quantity for all products based on POS data.
+                    </div>
+                `,
+                width: '600px',
+                saveText: '✅ Apply Reconciliation',
+                onSave: () => this.applyReconciliation(soldByProduct, totalSales)
+            });
+            
+        } catch (error) {
+            console.error('Error fetching POS sales:', error);
+            Toast.error('Failed to fetch sales: ' + error.message);
+        }
+    },
+    
+    async applyReconciliation(soldByProduct, totalSales) {
+        const today = this.getTodayString();
+        
+        try {
             let updatedCount = 0;
-            let skippedCount = 0;
             
             for (const record of this.dailyRecords) {
                 const soldQty = soldByProduct[record.productId] || 0;
+                const docId = `${today}_${record.productId}`;
                 
+                await db.collection('dailyInventory').doc(docId).update({
+                    soldQty: soldQty,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                // Log the reconciliation
                 if (soldQty > 0) {
-                    const docId = `${today}_${record.productId}`;
-                    
-                    await db.collection('dailyInventory').doc(docId).update({
-                        soldQty: soldQty,
-                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    
-                    // Log the reconciliation
                     await this.createStockMovement({
                         productId: record.productId,
                         type: 'reconcile',
                         qty: -soldQty,
                         date: today,
-                        notes: `Reconciled with POS: ${soldQty} sold (from ${totalSales} transactions)`,
+                        notes: `Reconciled with POS: ${soldQty} sold`,
                         performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
                     });
-                    
-                    updatedCount++;
-                    console.log(`Updated ${record.productName}: soldQty = ${soldQty}`);
-                } else {
-                    skippedCount++;
                 }
+                
+                updatedCount++;
             }
             
-            Toast.success(`Reconciled! Updated ${updatedCount} products, ${skippedCount} had no sales`);
+            Modal.close();
+            Toast.success(`Reconciliation complete! Updated ${updatedCount} products from ${totalSales} POS transactions`);
             
         } catch (error) {
-            console.error('Error reconciling with POS:', error);
-            Toast.error('Failed to reconcile: ' + error.message);
+            console.error('Error applying reconciliation:', error);
+            Toast.error('Failed to apply: ' + error.message);
         }
     }
     
