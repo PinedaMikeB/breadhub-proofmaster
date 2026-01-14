@@ -712,6 +712,13 @@ const Inventory = {
 
     // ===== ADJUST BEGINNING/SOLD (Admin Only) =====
     showAdjustModal(productId) {
+        // Password prompt
+        const password = prompt('Enter admin password to adjust:');
+        if (password !== '1185') {
+            Toast.error('Invalid password');
+            return;
+        }
+        
         const record = this.dailyRecords.find(r => r.productId === productId);
         if (!record) return;
         
