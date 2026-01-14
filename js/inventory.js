@@ -155,12 +155,10 @@ const Inventory = {
                     ${!isToday ? `<button class="btn btn-secondary" onclick="Inventory.goToToday()">Today</button>` : ''}
                 </div>
 
-                ${isToday && Auth.hasRole('baker') ? `
+                ${isToday && Auth.currentUser ? `
                     <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
                         + Add Stock
                     </button>
-                ` : ''}
-                ${isToday && Auth.hasRole('admin') ? `
                     <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()">
                         📦 Process Carryover
                     </button>
@@ -212,7 +210,7 @@ const Inventory = {
                     <div style="font-size: 3rem; margin-bottom: 16px;">📦</div>
                     <h3>No Inventory Records</h3>
                     <p>No stock has been recorded for ${this.formatDate(this.selectedDate)}.</p>
-                    ${isToday && Auth.hasRole('baker') ? `
+                    ${isToday && Auth.currentUser ? `
                         <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
                             + Add First Stock
                         </button>
