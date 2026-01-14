@@ -131,10 +131,15 @@ const Inventory = {
     
     // ===== RENDER MAIN VIEW =====
     render() {
+        console.log('Inventory.render() called, selectedDate:', this.selectedDate);
         const container = document.getElementById('inventoryGrid');
-        if (!container) return;
+        if (!container) {
+            console.error('inventoryGrid container not found!');
+            return;
+        }
         
         const isToday = this.selectedDate === this.getTodayString();
+        console.log('isToday:', isToday, 'getTodayString:', this.getTodayString());
         
         // Date selector and action buttons
         let html = `
