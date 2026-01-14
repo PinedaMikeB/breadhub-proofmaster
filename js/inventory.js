@@ -170,6 +170,11 @@ const Inventory = {
                         🌙 End of Day Count
                     </button>
                 ` : ''}
+                ${isToday && Auth.hasRole('admin') && this.dailyRecords.length > 0 ? `
+                    <button class="btn btn-secondary" onclick="Inventory.reconcileWithPOS()" style="background:#E3F2FD;border-color:#1976D2;color:#1565C0;">
+                        🔄 Reconcile with POS
+                    </button>
+                ` : ''}
             </div>
         `;
         
@@ -325,7 +330,12 @@ const Inventory = {
                         <div style="display:flex;gap:8px;margin-top:12px;">
                             ${Auth.hasRole('baker') ? `
                                 <button class="btn btn-secondary btn-sm" onclick="Inventory.showAddProductionModal('${record.productId}')" style="flex:1;">
-                                    + Add More
+                                    + Add
+                                </button>
+                            ` : ''}
+                            ${Auth.hasRole('admin') ? `
+                                <button class="btn btn-secondary btn-sm" onclick="Inventory.showAdjustModal('${record.productId}')" style="flex:1;background:#FFF3E0;border-color:#FF9800;">
+                                    ✏️ Adjust
                                 </button>
                             ` : ''}
                             <button class="btn btn-secondary btn-sm" onclick="Inventory.showSingleEndCount('${record.productId}')" style="flex:1;">
@@ -1427,6 +1437,90 @@ const Inventory = {
         } catch (error) {
             console.error('Error cancelling reservation:', error);
             throw error;
+        }
+    },
+    
+    // ===== ONE-TIME RECONCILE WITH POS SALES =====
+    async reconcileWithPOS() {
+        // Password prompt
+        const password = prompt('Enter admin password to reconcile:');
+        if (password !== '1185') {
+            Toast.error('Invalid password');
+            return;
+        }
+        
+        const today = this.getTodayString();
+        
+        try {
+            Toast.info('Fetching POS sales data...');
+            
+            // Get all sales for today from POS
+            const salesSnapshot = await db.collection('sales')
+                .where('dateKey', '==', today)
+                .get();
+            
+            if (salesSnapshot.empty) {
+                Toast.warning('No POS sales found for today');
+                return;
+            }
+            
+            // Aggregate sold quantities by productId
+            const soldByProduct = {};
+            let totalSales = 0;
+            
+            salesSnapshot.forEach(doc => {
+                const sale = doc.data();
+                totalSales++;
+                
+                if (sale.items && Array.isArray(sale.items)) {
+                    sale.items.forEach(item => {
+                        if (item.productId) {
+                            soldByProduct[item.productId] = (soldByProduct[item.productId] || 0) + (item.quantity || 1);
+                        }
+                    });
+                }
+            });
+            
+            console.log('Sales aggregated:', soldByProduct);
+            console.log('Total sales transactions:', totalSales);
+            
+            // Update dailyInventory records with sold quantities
+            let updatedCount = 0;
+            let skippedCount = 0;
+            
+            for (const record of this.dailyRecords) {
+                const soldQty = soldByProduct[record.productId] || 0;
+                
+                if (soldQty > 0) {
+                    const docId = `${today}_${record.productId}`;
+                    
+                    await db.collection('dailyInventory').doc(docId).update({
+                        soldQty: soldQty,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    // Log the reconciliation
+                    await this.createStockMovement({
+                        productId: record.productId,
+                        type: 'reconcile',
+                        qty: -soldQty,
+                        date: today,
+                        notes: `Reconciled with POS: ${soldQty} sold (from ${totalSales} transactions)`,
+                        performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                    });
+                    
+                    updatedCount++;
+                    console.log(`Updated ${record.productName}: soldQty = ${soldQty}`);
+                } else {
+                    skippedCount++;
+                }
+            }
+            
+            Toast.success(`Reconciled! Updated ${updatedCount} products, ${skippedCount} had no sales`);
+            
+        } catch (error) {
+            console.error('Error reconciling with POS:', error);
+            Toast.error('Failed to reconcile: ' + error.message);
         }
     }
     
