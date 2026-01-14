@@ -13,6 +13,7 @@ const Inventory = {
     dailyRecords: [],
     stockMovements: [],
     selectedDate: null,
+    pendingCarryover: [], // Products that need carryover
     
     // Real-time listeners
     unsubscribe: null,
@@ -20,6 +21,7 @@ const Inventory = {
     async init() {
         this.selectedDate = this.getTodayString();
         await this.load();
+        await this.checkPendingCarryover();
         this.setupRealtimeListener();
     },
     
@@ -48,6 +50,45 @@ const Inventory = {
             month: 'short', 
             day: 'numeric' 
         });
+    },
+    
+    // Check if there are products from yesterday that need carryover
+    async checkPendingCarryover() {
+        const todayStr = this.getTodayString();
+        
+        // Get yesterday's date in local time
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const year = yesterday.getFullYear();
+        const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+        const day = String(yesterday.getDate()).padStart(2, '0');
+        const yesterdayStr = `${year}-${month}-${day}`;
+        
+        try {
+            const snapshot = await db.collection('dailyInventory')
+                .where('date', '==', yesterdayStr)
+                .get();
+            
+            const yesterdayRecords = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            
+            // Filter to only those with remaining stock
+            const withRemaining = yesterdayRecords.filter(r => {
+                const stock = this.calculateStock(r);
+                return stock.expectedRemaining > 0;
+            });
+            
+            // Check which already have today's record
+            const todayProductIds = this.dailyRecords.map(r => r.productId);
+            this.pendingCarryover = withRemaining.filter(r => !todayProductIds.includes(r.productId));
+            
+            console.log('Pending carryover:', this.pendingCarryover.length, 'products');
+        } catch (error) {
+            console.error('Error checking carryover:', error);
+            this.pendingCarryover = [];
+        }
     },
 
     // ===== DATA LOADING =====
@@ -164,12 +205,21 @@ const Inventory = {
                 </div>
 
                 ${isToday ? `
-                    <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
-                        + Add Stock
-                    </button>
-                    <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()">
-                        📦 Process Carryover
-                    </button>
+                    ${this.pendingCarryover.length > 0 ? `
+                        <button class="btn btn-primary" onclick="Inventory.showCarryoverModal()" style="background:#FF9800;border-color:#F57C00;">
+                            📦 Process Carryover First (${this.pendingCarryover.length})
+                        </button>
+                        <button class="btn btn-secondary" disabled style="opacity:0.5;cursor:not-allowed;" title="Process carryover first">
+                            + Add Stock
+                        </button>
+                    ` : `
+                        <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
+                            + Add Stock
+                        </button>
+                        <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()">
+                            📦 Process Carryover
+                        </button>
+                    `}
                 ` : ''}
                 ${isToday && this.dailyRecords.length > 0 ? `
                     <button class="btn btn-secondary" onclick="Inventory.showEndOfDayModal()" style="background:#FFF3E0;border-color:#FF9800;color:#E65100;">
@@ -217,12 +267,18 @@ const Inventory = {
                     <h3>No Inventory Records</h3>
                     <p>No stock has been recorded for ${this.formatDate(this.selectedDate)}.</p>
                     ${isToday ? `
-                        <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
-                            + Add First Stock
-                        </button>
-                        <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()" style="margin-top: 16px; margin-left: 8px;">
-                            📦 Process Carryover
-                        </button>
+                        ${this.pendingCarryover.length > 0 ? `
+                            <div style="background:#FFF3E0;padding:12px;border-radius:8px;margin:16px 0;color:#E65100;">
+                                ⚠️ <strong>${this.pendingCarryover.length} products</strong> have leftover from yesterday. Process carryover first!
+                            </div>
+                            <button class="btn btn-primary" onclick="Inventory.showCarryoverModal()" style="margin-top: 8px;background:#FF9800;border-color:#F57C00;">
+                                📦 Process Carryover First
+                            </button>
+                        ` : `
+                            <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
+                                + Add First Stock
+                            </button>
+                        `}
                     ` : ''}
                 </div>
             `;
@@ -1115,6 +1171,9 @@ const Inventory = {
             
             Modal.close();
             Toast.success(`Processed carryover for ${toProcess.length} products`);
+            
+            // Refresh carryover status
+            await this.checkPendingCarryover();
             
         } catch (error) {
             console.error('Error processing carryover:', error);
