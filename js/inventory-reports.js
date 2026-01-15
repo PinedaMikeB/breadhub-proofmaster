@@ -158,6 +158,23 @@ const InventoryReports = {
                 }
             });
 
+            // Find production timestamps from movements
+            let carryoverTime = null;
+            let productionTime = null;
+            
+            productMovements.forEach(m => {
+                if (m.type === 'carryover' && m.performedAt) {
+                    carryoverTime = m.performedAt;
+                } else if (m.type === 'production' && m.performedAt) {
+                    productionTime = m.performedAt;
+                }
+            });
+            
+            // Also check record timestamps if movements don't have them
+            if (!carryoverTime && !productionTime && record.createdAt) {
+                productionTime = record.createdAt;
+            }
+
             // Product report entry
             const productReport = {
                 productId: record.productId,
@@ -172,6 +189,9 @@ const InventoryReports = {
                 recycled,
                 giveaways,
                 soldOutAt: record.soldOutAt,
+                carryoverTime,
+                productionTime,
+                createdAt: record.createdAt,
                 revenue: sold * pricePerUnit,
                 cost: totalAvailable * costPerUnit,
                 wastageCost: wastage * costPerUnit,
@@ -257,11 +277,22 @@ const InventoryReports = {
         if (isEndOfDay || isPastDate) {
             report.products.forEach(p => {
                 if (p.carryover > 0 && p.remaining > p.carryover) {
+                    const carryoverTimeStr = p.carryoverTime ? this.formatTime(p.carryoverTime) : '';
+                    const prodTimeStr = p.productionTime ? this.formatTime(p.productionTime) : '';
+                    
+                    let timeline = `${p.carryover} carryover`;
+                    if (carryoverTimeStr) timeline += ` (${carryoverTimeStr})`;
+                    if (p.produced > 0) {
+                        timeline += ` + ${p.produced} fresh`;
+                        if (prodTimeStr) timeline += ` (${prodTimeStr})`;
+                    }
+                    timeline += ` = ${p.totalAvailable} total → ${p.remaining} unsold`;
+                    
                     insights.push({
                         type: 'info',
                         icon: '📦',
                         title: `Excess stock: ${p.productName}`,
-                        message: `Started with ${p.carryover} carryover and still has ${p.remaining} remaining. Reduce tomorrow's production.`,
+                        message: `${timeline}. Reduce tomorrow's production.`,
                         priority: 'medium'
                     });
                 }
@@ -323,11 +354,36 @@ const InventoryReports = {
         // 7. Morning summary (if today and before 5pm)
         const isToday = report.date === this.getTodayString();
         if (isToday && !isEndOfDay && report.totals.totalAvailable > 0) {
+            // Build detailed timeline
+            let timelineDetails = [];
+            
+            // Products with carryover
+            const carryoverProducts = report.products.filter(p => p.carryover > 0);
+            if (carryoverProducts.length > 0) {
+                const carryoverTotal = carryoverProducts.reduce((sum, p) => sum + p.carryover, 0);
+                const firstCarryoverTime = carryoverProducts[0].carryoverTime || carryoverProducts[0].createdAt;
+                const carryoverTimeStr = firstCarryoverTime ? this.formatTime(firstCarryoverTime) : 'morning';
+                timelineDetails.push(`📦 ${carryoverTotal} carryover (processed ~${carryoverTimeStr})`);
+            }
+            
+            // Products with new production
+            const newProdProducts = report.products.filter(p => p.produced > 0);
+            if (newProdProducts.length > 0) {
+                const prodTotal = newProdProducts.reduce((sum, p) => sum + p.produced, 0);
+                const firstProdTime = newProdProducts[0].productionTime || newProdProducts[0].createdAt;
+                const prodTimeStr = firstProdTime ? this.formatTime(firstProdTime) : 'today';
+                timelineDetails.push(`🍞 ${prodTotal} fresh baked (added ~${prodTimeStr})`);
+            }
+            
+            if (report.totals.totalSold > 0) {
+                timelineDetails.push(`✅ ${report.totals.totalSold} sold so far`);
+            }
+            
             insights.push({
                 type: 'info',
                 icon: '☀️',
-                title: 'Good morning!',
-                message: `Today's inventory: ${report.totals.totalAvailable} items (${report.totals.totalCarryover} carryover + ${report.totals.totalProduced} fresh). ${report.totals.totalSold} sold so far.`,
+                title: `Today's Inventory: ${report.totals.totalAvailable} items`,
+                message: timelineDetails.join(' → '),
                 priority: 'low'
             });
         }
