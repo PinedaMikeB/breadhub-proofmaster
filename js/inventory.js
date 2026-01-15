@@ -754,7 +754,12 @@ const Inventory = {
                 saveText: 'Go to Finishing Station',
                 onSave: () => {
                     Modal.close();
-                    App.navigateTo('finishingStation');
+                    // Navigate to Finishing Station and open the finish modal for this product
+                    App.showView('finishingStation');
+                    // Small delay to let the view render, then open finish modal
+                    setTimeout(() => {
+                        FinishingStation.showFinishModal(product.baseBreadId, productId);
+                    }, 300);
                 }
             });
             return;
