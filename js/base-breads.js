@@ -12,24 +12,41 @@
 
 const BaseBreads = {
     data: [],
+    initialized: false,
     
     async init() {
-        await this.load();
-        await this.seedDefaults();
+        if (this.initialized) return;
+        try {
+            await this.load();
+            await this.seedDefaults();
+            this.initialized = true;
+        } catch (error) {
+            console.error('BaseBreads init error:', error);
+        }
     },
     
     async load() {
         try {
+            if (typeof DB === 'undefined' || !DB.getAll) {
+                console.warn('DB not ready, retrying in 500ms...');
+                await new Promise(r => setTimeout(r, 500));
+            }
             this.data = await DB.getAll('baseBreads');
             this.data.sort((a, b) => a.name.localeCompare(b.name));
         } catch (error) {
             console.error('Error loading base breads:', error);
+            this.data = [];
         }
     },
     
     async seedDefaults() {
         // Only seed if empty
-        if (this.data.length > 0) return;
+        if (this.data.length > 0) {
+            console.log('Base breads already exist, skipping seed');
+            return;
+        }
+        
+        console.log('Seeding default base breads...');
         
         const defaults = [
             { 
@@ -141,7 +158,12 @@ const BaseBreads = {
     },
 
     // ===== RENDER UI =====
-    render() {
+    async render() {
+        // Ensure initialized
+        if (!this.initialized) {
+            await this.init();
+        }
+        
         const container = document.getElementById('baseBreadsContent');
         if (!container) return;
         
