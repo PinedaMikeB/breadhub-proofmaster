@@ -249,20 +249,26 @@ const InventoryReports = {
             }
         });
 
-        // 3. Products with lots of carryover
-        report.products.forEach(p => {
-            if (p.carryover > 0 && p.remaining > p.carryover) {
-                insights.push({
-                    type: 'info',
-                    icon: '📦',
-                    title: `Excess stock: ${p.productName}`,
-                    message: `Started with ${p.carryover} carryover and still has ${p.remaining} remaining. Reduce tomorrow's production.`,
-                    priority: 'medium'
-                });
-            }
-        });
+        // 3. Products with lots of carryover - ONLY show at end of day (after 5pm) or for past dates
+        const currentHour = new Date().getHours();
+        const isEndOfDay = currentHour >= 17; // 5 PM or later
+        const isPastDate = report.date < this.getTodayString();
+        
+        if (isEndOfDay || isPastDate) {
+            report.products.forEach(p => {
+                if (p.carryover > 0 && p.remaining > p.carryover) {
+                    insights.push({
+                        type: 'info',
+                        icon: '📦',
+                        title: `Excess stock: ${p.productName}`,
+                        message: `Started with ${p.carryover} carryover and still has ${p.remaining} remaining. Reduce tomorrow's production.`,
+                        priority: 'medium'
+                    });
+                }
+            });
+        }
 
-        // 4. Best sellers
+        // 4. Best sellers (only if there are actual sales)
         const sortedBySales = [...report.products].sort((a, b) => b.sold - a.sold);
         if (sortedBySales.length > 0 && sortedBySales[0].sold > 0) {
             insights.push({
@@ -279,22 +285,25 @@ const InventoryReports = {
             ? Math.round((report.totals.totalSold / report.totals.totalAvailable) * 100) 
             : 0;
         
-        if (overallSellRate >= 90) {
-            insights.push({
-                type: 'success',
-                icon: '🎉',
-                title: 'Excellent performance!',
-                message: `${overallSellRate}% sell-through rate today. Great inventory management!`,
-                priority: 'low'
-            });
-        } else if (overallSellRate < 70) {
-            insights.push({
-                type: 'warning',
-                icon: '📉',
-                title: 'Low sell-through rate',
-                message: `Only ${overallSellRate}% of stock sold. Consider reducing overall production or running promotions.`,
-                priority: 'medium'
-            });
+        // Performance insights only at end of day or for past dates
+        if (isEndOfDay || isPastDate) {
+            if (overallSellRate >= 90) {
+                insights.push({
+                    type: 'success',
+                    icon: '🎉',
+                    title: 'Excellent performance!',
+                    message: `${overallSellRate}% sell-through rate. Great inventory management!`,
+                    priority: 'low'
+                });
+            } else if (overallSellRate < 70) {
+                insights.push({
+                    type: 'warning',
+                    icon: '📉',
+                    title: 'Low sell-through rate',
+                    message: `Only ${overallSellRate}% of stock sold. Consider reducing overall production or running promotions.`,
+                    priority: 'medium'
+                });
+            }
         }
 
         // 6. Wastage cost impact
@@ -308,6 +317,18 @@ const InventoryReports = {
                 title: 'Wastage cost impact',
                 message: `₱${report.totals.wastageCost.toFixed(2)} lost to wastage (${wastagePercent}% of revenue).`,
                 priority: 'medium'
+            });
+        }
+
+        // 7. Morning summary (if today and before 5pm)
+        const isToday = report.date === this.getTodayString();
+        if (isToday && !isEndOfDay && report.totals.totalAvailable > 0) {
+            insights.push({
+                type: 'info',
+                icon: '☀️',
+                title: 'Good morning!',
+                message: `Today's inventory: ${report.totals.totalAvailable} items (${report.totals.totalCarryover} carryover + ${report.totals.totalProduced} fresh). ${report.totals.totalSold} sold so far.`,
+                priority: 'low'
             });
         }
 
