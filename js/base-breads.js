@@ -156,6 +156,16 @@ const BaseBreads = {
         const products = await DB.getAll('products');
         return products.filter(p => p.baseBreadId === baseBreedId);
     },
+    
+    // Auto-link products to base breads
+    async runAutoLink() {
+        if (typeof AutoLinkBaseBread !== 'undefined') {
+            await AutoLinkBaseBread.run();
+            this.render(); // Refresh to show updated counts
+        } else {
+            Toast.error('Auto-link module not loaded');
+        }
+    },
 
     // ===== RENDER UI =====
     async render() {
@@ -168,15 +178,20 @@ const BaseBreads = {
         if (!container) return;
         
         let html = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
                 <div>
                     <span style="font-size:0.9rem;color:#666;">
                         ${this.data.length} base breads configured
                     </span>
                 </div>
-                <button class="btn btn-primary" onclick="BaseBreads.showAddModal()">
-                    + Add Base Bread
-                </button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="BaseBreads.runAutoLink()" style="background:#E3F2FD;">
+                        🔗 Auto-Link Products
+                    </button>
+                    <button class="btn btn-primary" onclick="BaseBreads.showAddModal()">
+                        + Add Base Bread
+                    </button>
+                </div>
             </div>
             
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
