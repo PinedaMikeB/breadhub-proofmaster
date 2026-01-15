@@ -127,6 +127,7 @@ const App = {
             dashboard: { title: 'Dashboard', subtitle: 'Production overview' },
             inventory: { title: 'Inventory', subtitle: 'Stock tracking & management' },
             inventoryReports: { title: 'Inventory Reports', subtitle: 'Daily performance, wastage & AI insights' },
+            businessIntelligence: { title: 'Business Intelligence', subtitle: 'AI-Powered Analytics & Recommendations' },
             production: { title: 'New Production', subtitle: 'Plan your production run' },
             timers: { title: 'Active Timers', subtitle: 'Monitor proofing and baking' },
             suppliers: { title: 'Suppliers', subtitle: 'Manage suppliers with location & delivery' },
@@ -158,6 +159,9 @@ const App = {
                 break;
             case 'inventoryReports':
                 InventoryReports.render();
+                break;
+            case 'businessIntelligence':
+                BusinessIntelligence.render();
                 break;
             case 'suppliers':
                 Suppliers.render();

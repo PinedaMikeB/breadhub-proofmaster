@@ -999,8 +999,8 @@ const InventoryReports = {
                     <tbody>
         `;
 
-        // Sort products by sold quantity (best sellers first)
-        const sortedProducts = [...report.products].sort((a, b) => b.sold - a.sold);
+        // Sort products by sell rate ascending (lowest performers at bottom - most visible)
+        const sortedProducts = [...report.products].sort((a, b) => a.sellRate - b.sellRate);
         
         sortedProducts.forEach((p, index) => {
             const rowBg = index % 2 === 0 ? '#fff' : '#fafafa';
