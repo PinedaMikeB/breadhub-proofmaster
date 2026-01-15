@@ -828,13 +828,26 @@ const Inventory = {
                     <label>Reason for Adjustment</label>
                     <select id="adjReason" class="form-input">
                         <option value="">-- Select reason --</option>
-                        <option value="Corrected miscount">Corrected miscount</option>
-                        <option value="Stale/Expired - discarded">🗑️ Stale/Expired - discarded</option>
-                        <option value="Employee meal">🍽️ Employee meal</option>
-                        <option value="Taste test/sample">🧪 Taste test/sample</option>
-                        <option value="Breakage/damaged">💔 Breakage/damaged</option>
-                        <option value="Given to customer (free)">🎁 Given to customer (free)</option>
-                        <option value="Initial setup">📋 Initial setup</option>
+                        <optgroup label="📊 Corrections">
+                            <option value="Corrected miscount">Corrected miscount</option>
+                            <option value="Initial setup">📋 Initial setup</option>
+                        </optgroup>
+                        <optgroup label="🗑️ Wastage">
+                            <option value="Stale/Expired - discarded">🗑️ Stale/Expired - discarded</option>
+                            <option value="Breakage/damaged">💔 Breakage/damaged</option>
+                        </optgroup>
+                        <optgroup label="♻️ Recycled">
+                            <option value="Recycled - Bread Pudding">♻️ Recycled - Bread Pudding</option>
+                            <option value="Recycled - Toasted Bread">♻️ Recycled - Toasted Bread</option>
+                            <option value="Recycled - Croutons">♻️ Recycled - Croutons</option>
+                            <option value="Recycled - Other">♻️ Recycled - Other use</option>
+                        </optgroup>
+                        <optgroup label="🎁 Giveaways">
+                            <option value="Employee meal">🍽️ Employee meal</option>
+                            <option value="Taste test/sample">🧪 Taste test/sample</option>
+                            <option value="Given to customer (free)">🎁 Given to customer (free)</option>
+                            <option value="Donation">❤️ Donation</option>
+                        </optgroup>
                         <option value="Other">Other</option>
                     </select>
                 </div>

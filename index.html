@@ -184,6 +184,9 @@
                         <li><a href="#" data-view="history" class="nav-link">
                             <span class="nav-icon">📜</span> Production History
                         </a></li>
+                        <li><a href="#" data-view="inventoryReports" class="nav-link" data-min-role="manager">
+                            <span class="nav-icon">📊</span> Inventory Reports
+                        </a></li>
                     </ul>
                 </div>
                 
@@ -701,6 +704,16 @@
                     </div>
                 </div>
                 
+                <!-- Inventory Reports View -->
+                <div id="inventoryReportsView" class="view">
+                    <div class="view-header">
+                        <h2>📊 Inventory Reports</h2>
+                    </div>
+                    <div id="inventoryReportsContent">
+                        <p class="empty-state">Loading reports...</p>
+                    </div>
+                </div>
+                
                 <!-- Users Management View (Admin Only) -->
                 <div id="usersView" class="view">
                     <div class="view-header">
@@ -775,6 +788,7 @@
     <script src="js/fillings.js"></script>
     <script src="js/products.js"></script>
     <script src="js/inventory.js"></script>
+    <script src="js/inventory-reports.js"></script>
     <script src="js/purchase-requests.js"></script>
     <script src="js/production.js"></script>
     <script src="js/timers.js"></script>
