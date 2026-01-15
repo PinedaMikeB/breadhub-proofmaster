@@ -224,7 +224,7 @@ const InventoryReports = {
             
             const agg = productAggregates[record.productId];
             const costPerUnit = product.estimatedCost || 0;
-            const pricePerUnit = product.price || 0;
+            const pricePerUnit = product.finalSRP || product.price || 0;
             
             // Aggregate values
             const carryover = record.carryoverQty || 0;
@@ -365,7 +365,7 @@ const InventoryReports = {
             
             // Get product cost and price
             const costPerUnit = product.estimatedCost || 0;
-            const pricePerUnit = product.price || 0;
+            const pricePerUnit = product.finalSRP || product.price || 0;
 
             // Calculate adjustments by category
             let wastage = 0;
