@@ -11,10 +11,13 @@
 const FinishingStation = {
     baseInventory: {},  // { baseBreedId: { qty, lastUpdated } }
     selectedDate: null,
+    initialized: false,
     
     async init() {
+        if (this.initialized) return;
         this.selectedDate = this.getTodayString();
         await this.loadBaseInventory();
+        this.initialized = true;
     },
     
     getTodayString() {
@@ -25,6 +28,15 @@ const FinishingStation = {
     // ===== DATA LOADING =====
     async loadBaseInventory() {
         try {
+            // Wait for db to be available
+            if (typeof db === 'undefined' || !db) {
+                console.warn('Firestore not ready, retrying...');
+                await new Promise(r => setTimeout(r, 500));
+                if (!db) return;
+            }
+            
+            this.selectedDate = this.selectedDate || this.getTodayString();
+            
             const snapshot = await db.collection('dailyBaseInventory')
                 .where('date', '==', this.selectedDate)
                 .get();
@@ -183,6 +195,16 @@ const FinishingStation = {
     async render() {
         const container = document.getElementById('finishingStationContent');
         if (!container) return;
+        
+        // Ensure BaseBreads is initialized
+        if (!BaseBreads.initialized) {
+            await BaseBreads.init();
+        }
+        
+        // Ensure we're initialized
+        if (!this.initialized) {
+            await this.init();
+        }
         
         await this.loadBaseInventory();
         const activeBases = BaseBreads.getActive();
