@@ -323,6 +323,11 @@ const InventoryReports = {
         const container = document.getElementById('inventoryReportsContent');
         if (!container) return;
 
+        // Initialize date if not set
+        if (!this.selectedDate) {
+            this.selectedDate = this.getTodayString();
+        }
+
         // Show loading
         container.innerHTML = '<p class="empty-state">Loading report...</p>';
 
