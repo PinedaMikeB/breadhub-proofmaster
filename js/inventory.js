@@ -299,6 +299,11 @@ const Inventory = {
         const stock = this.calculateStock(record);
         const isToday = this.selectedDate === this.getTodayString();
         
+        // Check if product requires finishing
+        const product = Products.data.find(p => p.id === record.productId);
+        const requiresFinishing = product && product.baseBreadId;
+        const baseBread = requiresFinishing ? BaseBreads.getById(product.baseBreadId) : null;
+        
         // Status indicators
         let statusBadge = '';
         let stockColor = '#2E7D32'; // green
@@ -310,6 +315,13 @@ const Inventory = {
             statusBadge = '<span style="background:#FFF3E0;color:#E65100;padding:4px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">LOW STOCK</span>';
             stockColor = '#E65100';
         }
+        
+        // Finishing badge
+        const finishingBadge = requiresFinishing ? `
+            <span style="background:#FFF8E1;color:#F57C00;padding:4px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;margin-right:4px;" title="Requires finishing from ${baseBread?.name || 'base bread'}">
+                🎨 ${baseBread?.icon || '🍞'}
+            </span>
+        ` : '';
         
         // Carryover warning
         let carryoverWarning = '';
@@ -329,7 +341,7 @@ const Inventory = {
                             <h3 style="margin:0;font-size:1.1rem;">${record.productName || 'Unknown Product'}</h3>
                             <span style="opacity:0.8;font-size:0.85rem;">${Products.formatCategoryWithEmoji(record.category) || ''}</span>
                         </div>
-                        ${statusBadge}
+                        <div>${finishingBadge}${statusBadge}</div>
                     </div>
                 </div>
                 <div style="padding:16px;">
@@ -392,8 +404,8 @@ const Inventory = {
                     ${isToday ? `
                         <div style="display:flex;gap:8px;margin-top:12px;">
                             ${Auth.hasRole('baker') ? `
-                                <button class="btn btn-secondary btn-sm" onclick="Inventory.showAddProductionModal('${record.productId}')" style="flex:1;">
-                                    + Add
+                                <button class="btn btn-secondary btn-sm" onclick="Inventory.showAddProductionModal('${record.productId}')" style="flex:1;${requiresFinishing ? 'background:#FFF8E1;border-color:#F57C00;' : ''}">
+                                    ${requiresFinishing ? '🎨 Finish' : '+ Add'}
                                 </button>
                             ` : ''}
                             ${Auth.hasRole('admin') ? `
@@ -717,6 +729,37 @@ const Inventory = {
         const record = this.dailyRecords.find(r => r.productId === productId);
         if (!record) return;
         
+        // Check if product has a base bread - block direct addition
+        const product = Products.data.find(p => p.id === productId);
+        if (product && product.baseBreadId) {
+            const baseBread = BaseBreads.getById(product.baseBreadId);
+            Modal.open({
+                title: `🚫 Cannot Add Directly`,
+                content: `
+                    <div style="text-align:center;padding:20px;">
+                        <div style="font-size:3rem;margin-bottom:16px;">🎨</div>
+                        <p style="font-size:1.1rem;margin-bottom:16px;">
+                            <strong>${record.productName}</strong> requires finishing from a base bread.
+                        </p>
+                        <div style="background:#FFF3E0;padding:16px;border-radius:8px;margin-bottom:16px;">
+                            <p style="margin:0;color:#E65100;">
+                                This product uses <strong>${baseBread?.icon || '🍞'} ${baseBread?.name || 'a base bread'}</strong>
+                            </p>
+                        </div>
+                        <p style="color:#666;">
+                            Go to <strong>Finishing Station</strong> to convert base bread into this product.
+                        </p>
+                    </div>
+                `,
+                saveText: 'Go to Finishing Station',
+                onSave: () => {
+                    Modal.close();
+                    App.navigateTo('finishingStation');
+                }
+            });
+            return;
+        }
+        
         Modal.open({
             title: `➕ Add Production - ${record.productName}`,
             content: `
@@ -752,6 +795,14 @@ const Inventory = {
         
         if (qty <= 0) {
             Toast.error('Please enter a quantity');
+            return;
+        }
+        
+        // Double-check: Block base bread products
+        const product = Products.data.find(p => p.id === productId);
+        if (product && product.baseBreadId) {
+            Toast.error('This product requires finishing. Use Finishing Station.');
+            Modal.close();
             return;
         }
         
