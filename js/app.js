@@ -136,7 +136,9 @@ const App = {
             doughs: { title: 'Dough Recipes', subtitle: 'Manage dough recipes' },
             toppings: { title: 'Toppings', subtitle: 'Manage topping recipes' },
             fillings: { title: 'Fillings', subtitle: 'Manage filling recipes' },
+            baseBreads: { title: 'Base Breads', subtitle: 'Manage base bread types for JIT Finishing' },
             products: { title: 'Products', subtitle: 'Manage product assembly' },
+            finishingStation: { title: 'Finishing Station', subtitle: 'Convert base breads to finished products' },
             purchaseRequests: { title: 'Purchase Requests', subtitle: 'Create and manage purchase requests' },
             costs: { title: 'Cost Analysis', subtitle: 'Analyze production costs' },
             history: { title: 'Production History', subtitle: 'View past production runs' },
@@ -181,8 +183,14 @@ const App = {
             case 'fillings':
                 Fillings.render();
                 break;
+            case 'baseBreads':
+                BaseBreads.render();
+                break;
             case 'products':
                 Products.render();
+                break;
+            case 'finishingStation':
+                FinishingStation.render();
                 break;
             case 'production':
                 Production.loadProductSelect();

@@ -530,6 +530,24 @@ const Products = {
                         </label>
                     </div>
                 </div>
+
+                <!-- BASE BREAD (JIT Finishing) -->
+                <div style="background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #FFC107;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4 style="margin: 0; color: #F57C00;">🍞 Base Bread (JIT Finishing)</h4>
+                            <p style="font-size: 0.85rem; color: #F57C00; margin: 4px 0 0 0;">
+                                Link to a base bread if this product gets toppings added later
+                            </p>
+                        </div>
+                        <select name="baseBreadId" id="baseBreadId" class="form-select" style="width: 200px;">
+                            <option value="">None (sold as-is)</option>
+                            ${(typeof BaseBreads !== 'undefined' ? BaseBreads.getActive() : []).map(b => 
+                                `<option value="${b.id}" ${product.baseBreadId === b.id ? 'selected' : ''}>${b.icon} ${b.name}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                </div>
                 
                 <!-- SINGLE RECIPE MODE (default - no variants) -->
                 <div id="singleRecipeMode" style="display: ${product.variants && product.variants.length > 0 ? 'none' : 'block'};">
@@ -1668,6 +1686,7 @@ const Products = {
                 name: formData.get('name'),
                 category: formData.get('category'),
                 mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                baseBreadId: formData.get('baseBreadId') || null,
                 // Store first variant's recipe as the "base" recipe for backward compatibility
                 doughRecipeId: variants[0].recipe?.doughRecipeId || '',
                 fillings: variants[0].recipe?.fillings || [],
@@ -1727,6 +1746,7 @@ const Products = {
                 name: formData.get('name'),
                 category: formData.get('category'),
                 mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                baseBreadId: formData.get('baseBreadId') || null,
                 doughRecipeId: formData.get('doughRecipeId'),
                 fillings,
                 toppings,

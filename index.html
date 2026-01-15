@@ -160,8 +160,20 @@
                         <li><a href="#" data-view="fillings" class="nav-link">
                             <span class="nav-icon">🥥</span> Fillings
                         </a></li>
+                        <li><a href="#" data-view="baseBreads" class="nav-link">
+                            <span class="nav-icon">🍞</span> Base Breads
+                        </a></li>
                         <li><a href="#" data-view="products" class="nav-link">
                             <span class="nav-icon">🥐</span> Products
+                        </a></li>
+                    </ul>
+                </div>
+                
+                <div class="nav-section">
+                    <span class="nav-label">Production</span>
+                    <ul class="nav-menu">
+                        <li><a href="#" data-view="finishingStation" class="nav-link">
+                            <span class="nav-icon">🎨</span> Finishing Station
                         </a></li>
                     </ul>
                 </div>
@@ -727,6 +739,28 @@
                         <p class="empty-state">Loading business intelligence...</p>
                     </div>
                 </div>
+
+                <!-- Base Breads View -->
+                <div id="baseBreadsView" class="view">
+                    <div class="view-header">
+                        <h2>🍞 Base Breads</h2>
+                        <p style="color:#666;font-size:0.9rem;">Manage base bread types for JIT Finishing</p>
+                    </div>
+                    <div id="baseBreadsContent">
+                        <p class="empty-state">Loading base breads...</p>
+                    </div>
+                </div>
+
+                <!-- Finishing Station View -->
+                <div id="finishingStationView" class="view">
+                    <div class="view-header">
+                        <h2>🎨 Finishing Station</h2>
+                        <p style="color:#666;font-size:0.9rem;">Convert base breads to finished products</p>
+                    </div>
+                    <div id="finishingStationContent">
+                        <p class="empty-state">Loading finishing station...</p>
+                    </div>
+                </div>
                 
                 <!-- Users Management View (Admin Only) -->
                 <div id="usersView" class="view">
@@ -800,10 +834,12 @@
     <script src="js/doughs.js"></script>
     <script src="js/toppings.js"></script>
     <script src="js/fillings.js"></script>
+    <script src="js/base-breads.js"></script>
     <script src="js/products.js"></script>
     <script src="js/inventory.js"></script>
     <script src="js/inventory-reports.js"></script>
     <script src="js/business-intelligence.js"></script>
+    <script src="js/finishing-station.js"></script>
     <script src="js/purchase-requests.js"></script>
     <script src="js/production.js"></script>
     <script src="js/timers.js"></script>
