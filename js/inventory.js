@@ -411,7 +411,19 @@ const Inventory = {
                                 📋
                             </button>
                         </div>
-                    ` : ''}
+                    ` : `
+                        <!-- Past day - show edit button for admin -->
+                        ${Auth.hasRole('admin') ? `
+                            <div style="display:flex;gap:8px;margin-top:12px;">
+                                <button class="btn btn-secondary btn-sm" onclick="Inventory.showHistoricalEdit('${record.productId}')" style="flex:1;background:#FFEBEE;border-color:#C62828;">
+                                    🔓 Edit Historical Record
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="Inventory.showMovements('${record.productId}')" style="flex:1;">
+                                    📋
+                                </button>
+                            </div>
+                        ` : ''}
+                    `}
                 </div>
             </div>
         `;
@@ -928,6 +940,163 @@ const Inventory = {
         } catch (error) {
             console.error('Error saving adjustment:', error);
             Toast.error('Failed to save adjustment');
+        }
+    },
+
+    // ===== HISTORICAL RECORD EDIT (Admin Only) =====
+    showHistoricalEdit(productId) {
+        // Password prompt
+        const password = prompt('⚠️ ADMIN: Enter password to edit historical record:');
+        if (password === null) return;
+        if (password !== '1185') {
+            Toast.error('Invalid password');
+            return;
+        }
+        
+        const record = this.dailyRecords.find(r => r.productId === productId);
+        if (!record) return;
+        
+        const stock = this.calculateStock(record);
+        
+        Modal.open({
+            title: `🔓 Edit Historical - ${record.productName}`,
+            content: `
+                <div style="background:#FFEBEE;padding:12px;border-radius:8px;margin-bottom:16px;">
+                    <strong>⚠️ Warning:</strong> You are editing a historical record from <strong>${this.formatDate(this.selectedDate)}</strong>. 
+                    This should only be done to correct data entry errors.
+                </div>
+                
+                <div style="background:#F5F5F5;padding:12px;border-radius:8px;margin-bottom:16px;">
+                    <div style="font-size:0.85rem;color:#666;margin-bottom:4px;">Current Values:</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <div>Carryover: <strong>${record.carryoverQty || 0}</strong></div>
+                        <div>New Production: <strong>${record.newProductionQty || 0}</strong></div>
+                        <div>Total Available: <strong>${stock.totalAvailable}</strong></div>
+                        <div>Sold: <strong>${stock.sold}</strong></div>
+                        <div>End Count: <strong>${record.actualRemaining !== null ? record.actualRemaining : 'Not set'}</strong></div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Carryover Quantity</label>
+                    <input type="number" id="histCarryover" class="form-input" min="0" 
+                           value="${record.carryoverQty || 0}">
+                </div>
+                
+                <div class="form-group">
+                    <label>New Production Quantity</label>
+                    <input type="number" id="histProduction" class="form-input" min="0" 
+                           value="${record.newProductionQty || 0}">
+                </div>
+                
+                <div class="form-group">
+                    <label>Sold Quantity</label>
+                    <input type="number" id="histSold" class="form-input" min="0" 
+                           value="${record.soldQty || 0}">
+                </div>
+                
+                <div class="form-group">
+                    <label>End Count (Actual Remaining)</label>
+                    <input type="number" id="histEndCount" class="form-input" min="0" 
+                           value="${record.actualRemaining !== null ? record.actualRemaining : ''}"
+                           placeholder="Leave blank to clear">
+                </div>
+                
+                <div class="form-group">
+                    <label>Reason for Historical Edit</label>
+                    <select id="histReason" class="form-input">
+                        <option value="">-- Select reason --</option>
+                        <option value="Data entry error - missed production">Data entry error - missed production</option>
+                        <option value="Data entry error - wrong quantity">Data entry error - wrong quantity</option>
+                        <option value="POS sync issue">POS sync issue</option>
+                        <option value="System error correction">System error correction</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="histOtherReasonGroup" style="display:none;">
+                    <label>Specify Reason</label>
+                    <input type="text" id="histOtherReason" class="form-input" placeholder="Enter reason...">
+                </div>
+            `,
+            saveText: '💾 Save Historical Edit',
+            onSave: () => this.saveHistoricalEdit(productId)
+        });
+        
+        // Show/hide "Other" text field
+        document.getElementById('histReason').addEventListener('change', (e) => {
+            const otherGroup = document.getElementById('histOtherReasonGroup');
+            otherGroup.style.display = e.target.value === 'Other' ? 'block' : 'none';
+        });
+    },
+    
+    async saveHistoricalEdit(productId) {
+        let reason = document.getElementById('histReason').value;
+        if (reason === 'Other') {
+            reason = document.getElementById('histOtherReason').value.trim();
+        }
+        
+        if (!reason) {
+            Toast.error('Please select a reason for the edit');
+            return;
+        }
+        
+        const carryover = parseInt(document.getElementById('histCarryover').value) || 0;
+        const production = parseInt(document.getElementById('histProduction').value) || 0;
+        const sold = parseInt(document.getElementById('histSold').value) || 0;
+        const endCountVal = document.getElementById('histEndCount').value;
+        const endCount = endCountVal !== '' ? parseInt(endCountVal) : null;
+        
+        const totalAvailable = carryover + production;
+        
+        try {
+            const docId = `${this.selectedDate}_${productId}`;
+            const record = this.dailyRecords.find(r => r.productId === productId);
+            
+            // Calculate variance if end count is set
+            let variance = null;
+            let status = record.status;
+            if (endCount !== null) {
+                const expectedRemaining = totalAvailable - sold;
+                variance = endCount - expectedRemaining;
+                status = 'pending_approval';
+            }
+            
+            await db.collection('dailyInventory').doc(docId).update({
+                carryoverQty: carryover,
+                newProductionQty: production,
+                totalAvailable: totalAvailable,
+                soldQty: sold,
+                actualRemaining: endCount,
+                variance: variance,
+                status: status,
+                historicalEdit: true,
+                historicalEditReason: reason,
+                historicalEditBy: Auth.currentUser?.displayName || Auth.currentUser?.email,
+                historicalEditAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Log the historical edit
+            await this.createStockMovement({
+                productId: productId,
+                type: 'historical_edit',
+                qty: 0,
+                date: this.selectedDate,
+                notes: `Historical edit: ${reason}. Carryover: ${carryover}, Production: ${production}, Sold: ${sold}, End Count: ${endCount !== null ? endCount : 'N/A'}`,
+                performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+            });
+            
+            Modal.close();
+            Toast.success('Historical record updated');
+            
+            // Reload to show changes
+            await this.load();
+            this.render();
+            
+        } catch (error) {
+            console.error('Error saving historical edit:', error);
+            Toast.error('Failed to save historical edit');
         }
     },
 
