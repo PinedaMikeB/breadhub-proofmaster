@@ -71,6 +71,34 @@ const Products = {
         }
     },
     
+    // Called when the Enable/Disable checkbox changes
+    onEnabledChange() {
+        const checkbox = document.getElementById('isEnabledCheckbox');
+        const isEnabled = checkbox?.checked !== false;
+        
+        // Update the parent div to reflect the change visually
+        const container = checkbox?.closest('div[style*="background"]');
+        if (container) {
+            container.style.background = isEnabled 
+                ? 'linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)' 
+                : 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)';
+            container.style.borderColor = isEnabled ? '#4CAF50' : '#C62828';
+            
+            const h4 = container.querySelector('h4');
+            const p = container.querySelector('p');
+            if (h4) {
+                h4.style.color = isEnabled ? '#2E7D32' : '#C62828';
+                h4.innerHTML = isEnabled ? '✅ Product Enabled' : '🚫 Product Disabled';
+            }
+            if (p) {
+                p.style.color = isEnabled ? '#2E7D32' : '#C62828';
+                p.innerHTML = isEnabled 
+                    ? 'Product is available for sale on POS and Website' 
+                    : 'This product is hidden from POS and Website';
+            }
+        }
+    },
+    
     // Category mapping from old ProofMaster categories to new unified ones
     categoryMapping: {
         'sweet-bread': 'classic-filipino',
@@ -221,9 +249,14 @@ const Products = {
                 ? '<span style="font-size:0.7rem;padding:2px 6px;background:#FFF3E0;color:#E65100;border-radius:10px;">🍞</span>'
                 : '<span style="font-size:0.7rem;padding:2px 6px;background:#E3F2FD;color:#1565C0;border-radius:10px;">🥤</span>';
             
+            // Check if product is disabled (master switch)
+            const isDisabled = product.isEnabled === false;
+            
             // Stock badge
             let stockBadge = '';
-            if (stockInfo && stockInfo.hasRecord) {
+            if (isDisabled) {
+                stockBadge = '<span style="position:absolute;top:8px;right:8px;background:#9E9E9E;color:white;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;">🚫 DISABLED</span>';
+            } else if (stockInfo && stockInfo.hasRecord) {
                 if (stockInfo.status === 'out') {
                     stockBadge = '<span style="position:absolute;top:8px;right:8px;background:#FFEBEE;color:#C62828;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;">OUT OF STOCK</span>';
                 } else if (stockInfo.status === 'low') {
@@ -234,7 +267,7 @@ const Products = {
             }
             
             return `
-            <div class="recipe-card" data-id="${product.id}" style="position:relative;">
+            <div class="recipe-card" data-id="${product.id}" style="position:relative;${isDisabled ? 'opacity:0.6;' : ''}">
                 ${stockBadge}
                 <div class="recipe-card-header" style="background: linear-gradient(135deg, ${mainCat === 'bread' ? '#8E44AD, #9B59B6' : '#1565C0, #42A5F5'});">
                     <h3>${product.name}</h3>
@@ -512,6 +545,27 @@ const Products = {
                     <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${currentMainCat === 'bread' ? '#FFF3E0' : '#E3F2FD'}; color: ${currentMainCat === 'bread' ? '#E65100' : '#1565C0'};">
                         ${currentMainCat === 'bread' ? '🍞 Bread & Pastries' : '🥤 Drinks & Beverages'}
                     </span>
+                </div>
+                
+                <!-- PRODUCT ENABLED/DISABLED TOGGLE (Master Switch) -->
+                <div style="background: ${product.isEnabled === false ? '#FFEBEE' : '#E8F5E9'}; padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid ${product.isEnabled === false ? '#C62828' : '#4CAF50'};">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4 style="margin: 0; color: ${product.isEnabled === false ? '#C62828' : '#2E7D32'};">
+                                ${product.isEnabled === false ? '🚫 Product Disabled' : '✅ Product Enabled'}
+                            </h4>
+                            <p style="font-size: 0.85rem; color: ${product.isEnabled === false ? '#C62828' : '#2E7D32'}; margin: 4px 0 0 0;">
+                                ${product.isEnabled === false ? 'This product is hidden from POS and Website' : 'Product is available for sale on POS and Website'}
+                            </p>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: white; padding: 8px 16px; border-radius: 8px;">
+                            <input type="checkbox" name="isEnabled" id="isEnabledCheckbox" 
+                                   ${product.isEnabled !== false ? 'checked' : ''} 
+                                   onchange="Products.onEnabledChange()"
+                                   style="width: 20px; height: 20px;">
+                            <span style="font-weight: 600; color: #333;">Enabled</span>
+                        </label>
+                    </div>
                 </div>
                 
                 <!-- VARIANTS TOGGLE -->
@@ -1795,6 +1849,10 @@ const Products = {
             Toast.error('Please enter a product name');
             return;
         }
+        
+        // Get isEnabled state (master switch)
+        const isEnabled = document.getElementById('isEnabledCheckbox')?.checked !== false;
+        data.isEnabled = isEnabled;
         
         // Get existing shop data or create new
         const existingProduct = id ? this.data.find(p => p.id === id) : null;
