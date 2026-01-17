@@ -229,6 +229,9 @@ const Inventory = {
                         🔄 Reconcile with POS
                     </button>
                 ` : ''}
+                <button class="btn btn-secondary" onclick="Inventory.showWastageReport()" style="background:#FFEBEE;border-color:#C62828;color:#C62828;">
+                    🗑️ Wastage
+                </button>
             </div>
         `;
         
@@ -881,7 +884,7 @@ const Inventory = {
                 <div class="form-group">
                     <label>Beginning Stock</label>
                     <input type="number" id="adjBeginning" class="form-input" min="0" 
-                           value="${record.totalAvailable || 0}" placeholder="Total morning count">
+                           value="${stock.totalAvailable}" placeholder="Total morning count">
                     <small style="color:#666;">The original count at start of day</small>
                 </div>
                 
@@ -926,7 +929,7 @@ const Inventory = {
                 </div>
             `,
             saveText: 'Save Adjustment',
-            onSave: () => this.saveAdjustment(productId, stock)
+            onSave: () => this.saveAdjustment(productId)
         });
         
         // Show/hide "Other" text field
@@ -936,7 +939,7 @@ const Inventory = {
         });
     },
     
-    async saveAdjustment(productId, oldStock) {
+    async saveAdjustment(productId) {
         let reason = document.getElementById('adjReason').value;
         if (reason === 'Other') {
             reason = document.getElementById('adjOtherReason').value.trim();
@@ -955,13 +958,17 @@ const Inventory = {
             const docId = `${date}_${productId}`;
             const record = this.dailyRecords.find(r => r.productId === productId);
             
-            // Calculate what changed
-            const begDiff = newBeginning - (record.totalAvailable || 0);
+            // Calculate what changed - use calculateStock for accurate old values
+            const oldStockCalc = this.calculateStock(record);
+            const begDiff = newBeginning - oldStockCalc.totalAvailable;
             const soldDiff = newSold - (record.soldQty || 0);
             
             // Update the record
+            // IMPORTANT: When adjusting beginning balance, we need to reset carryover to 0
+            // and put the full beginning balance in newProductionQty so calculateStock works correctly
             await db.collection('dailyInventory').doc(docId).update({
-                newProductionQty: newBeginning, // Since carryover is 0, this equals totalAvailable
+                carryoverQty: 0,  // Reset carryover - it's now accounted for in the adjustment
+                newProductionQty: newBeginning, // Full beginning balance goes here
                 totalAvailable: newBeginning,
                 soldQty: newSold,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -974,9 +981,39 @@ const Inventory = {
                     type: 'adjustment',
                     qty: begDiff,
                     date: date,
-                    notes: `Beginning adjusted: ${oldStock.totalAvailable} → ${newBeginning}. ${reason}`,
+                    notes: `Beginning adjusted: ${oldStockCalc.totalAvailable} → ${newBeginning}. ${reason}`,
                     performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
                 });
+                
+                // If beginning decreased and reason is wastage-related, create wastage record
+                if (begDiff < 0) {
+                    const wastageQty = Math.abs(begDiff);
+                    const wastageReasonMap = {
+                        'Stale/Expired - discarded': 'stale_discarded',
+                        'Breakage/damaged': 'damaged',
+                        'Recycled - Bread Pudding': 'recycled_bread_pudding',
+                        'Recycled - Toasted Bread': 'recycled_toasted',
+                        'Recycled - Croutons': 'recycled_croutons',
+                        'Recycled - Other': 'recycled_other',
+                        'Employee meal': 'employee_meal',
+                        'Taste test/sample': 'sample',
+                        'Given to customer (free)': 'given_free',
+                        'Donation': 'donation'
+                    };
+                    
+                    const wastageReason = wastageReasonMap[reason];
+                    if (wastageReason) {
+                        await this.createWastageRecord({
+                            productId: productId,
+                            productName: record.productName,
+                            category: record.category,
+                            qty: wastageQty,
+                            reason: wastageReason,
+                            sourceAction: 'adjustment',
+                            notes: `Adjusted from ${oldStockCalc.totalAvailable} to ${newBeginning}`
+                        });
+                    }
+                }
             }
             
             if (soldDiff !== 0) {
@@ -985,7 +1022,7 @@ const Inventory = {
                     type: 'adjustment',
                     qty: -soldDiff,
                     date: date,
-                    notes: `Sold adjusted: ${oldStock.sold} → ${newSold}. ${reason}`,
+                    notes: `Sold adjusted: ${oldStockCalc.sold} → ${newSold}. ${reason}`,
                     performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
                 });
             }
@@ -1351,7 +1388,7 @@ const Inventory = {
                             <strong>${r.productName}</strong>
                             <div style="font-size:0.85rem;color:#666;">Yesterday's remaining: ${stock.expectedRemaining}</div>
                         </div>
-                        <input type="checkbox" checked data-product-id="${r.productId}" data-qty="${stock.expectedRemaining}">
+                        <input type="checkbox" checked data-product-id="${r.productId}" data-qty="${stock.expectedRemaining}" data-product-name="${r.productName}" data-category="${r.category || ''}">
                     </div>
                 `;
             }).join('');
@@ -1363,8 +1400,25 @@ const Inventory = {
                         The following products have remaining stock from ${this.formatDateShort(yesterdayStr)}. 
                         Select which ones to carry over to today:
                     </p>
-                    <div style="max-height:300px;overflow-y:auto;border:1px solid #eee;border-radius:8px;">
+                    <div style="max-height:250px;overflow-y:auto;border:1px solid #eee;border-radius:8px;">
                         ${carryoverList}
+                    </div>
+                    
+                    <div style="margin-top:16px;padding:12px;background:#FFF3E0;border-radius:8px;border-left:4px solid #FF9800;">
+                        <div style="font-weight:600;margin-bottom:8px;color:#E65100;">
+                            🗑️ Unchecked items will be recorded as:
+                        </div>
+                        <select id="wastageReason" class="form-input" style="width:100%;">
+                            <option value="stale_discarded">🗑️ Stale/Expired - discarded</option>
+                            <option value="damaged">💔 Damaged/Breakage</option>
+                            <option value="recycled_bread_pudding">♻️ Recycled - Bread Pudding</option>
+                            <option value="recycled_toasted">♻️ Recycled - Toasted Bread</option>
+                            <option value="recycled_croutons">♻️ Recycled - Croutons</option>
+                            <option value="recycled_other">♻️ Recycled - Other</option>
+                            <option value="employee_meal">🍽️ Employee meal</option>
+                            <option value="sample">🧪 Taste test/sample</option>
+                            <option value="donation">❤️ Donation</option>
+                        </select>
                     </div>
                 `,
                 saveText: 'Process Carryover',
@@ -1378,21 +1432,33 @@ const Inventory = {
     },
     
     async processCarryover(records) {
-        const checkboxes = document.querySelectorAll('input[data-product-id]:checked');
-        const toProcess = Array.from(checkboxes).map(cb => ({
+        const allCheckboxes = document.querySelectorAll('input[data-product-id]');
+        const checkedBoxes = document.querySelectorAll('input[data-product-id]:checked');
+        const uncheckedBoxes = document.querySelectorAll('input[data-product-id]:not(:checked)');
+        const wastageReason = document.getElementById('wastageReason')?.value || 'stale_discarded';
+        
+        const toCarryover = Array.from(checkedBoxes).map(cb => ({
             productId: cb.dataset.productId,
             qty: parseInt(cb.dataset.qty)
         }));
         
-        if (toProcess.length === 0) {
-            Toast.warning('No products selected');
+        const toWastage = Array.from(uncheckedBoxes).map(cb => ({
+            productId: cb.dataset.productId,
+            productName: cb.dataset.productName,
+            category: cb.dataset.category,
+            qty: parseInt(cb.dataset.qty)
+        }));
+        
+        if (toCarryover.length === 0 && toWastage.length === 0) {
+            Toast.warning('No products to process');
             return;
         }
         
         try {
             const date = this.getTodayString();
             
-            for (const item of toProcess) {
+            // Process carryover items
+            for (const item of toCarryover) {
                 const record = records.find(r => r.productId === item.productId);
                 if (!record) continue;
                 
@@ -1438,8 +1504,29 @@ const Inventory = {
                 });
             }
             
+            // Process wastage items (unchecked)
+            for (const item of toWastage) {
+                await this.createWastageRecord({
+                    productId: item.productId,
+                    productName: item.productName,
+                    category: item.category,
+                    qty: item.qty,
+                    reason: wastageReason,
+                    sourceAction: 'carryover_skip',
+                    notes: 'Not carried over from previous day'
+                });
+            }
+            
             Modal.close();
-            Toast.success(`Processed carryover for ${toProcess.length} products`);
+            
+            let message = '';
+            if (toCarryover.length > 0) {
+                message += `Carried over ${toCarryover.length} products. `;
+            }
+            if (toWastage.length > 0) {
+                message += `Recorded ${toWastage.length} as wastage.`;
+            }
+            Toast.success(message);
             
             // Refresh carryover status
             await this.checkPendingCarryover();
@@ -2110,6 +2197,351 @@ const Inventory = {
         } catch (error) {
             console.error('Error applying reconciliation:', error);
             Toast.error('Failed to apply: ' + error.message);
+        }
+    },
+
+    // ===== WASTAGE TRACKING =====
+    
+    // Wastage reason labels for display
+    wastageReasonLabels: {
+        'stale_discarded': '🗑️ Stale/Expired - discarded',
+        'damaged': '💔 Damaged/Breakage',
+        'expired': '📅 Expired',
+        'recycled_bread_pudding': '♻️ Recycled - Bread Pudding',
+        'recycled_toasted': '♻️ Recycled - Toasted Bread',
+        'recycled_croutons': '♻️ Recycled - Croutons',
+        'recycled_other': '♻️ Recycled - Other',
+        'employee_meal': '🍽️ Employee meal',
+        'sample': '🧪 Taste test/sample',
+        'donation': '❤️ Donation',
+        'given_free': '🎁 Given to customer (free)'
+    },
+    
+    // Get category from reason
+    getWastageCategory(reason) {
+        if (reason.startsWith('recycled')) return 'recycled';
+        if (['employee_meal', 'sample', 'donation', 'given_free'].includes(reason)) return 'giveaway';
+        return 'wastage';
+    },
+    
+    // Create a wastage record
+    async createWastageRecord(data) {
+        const date = this.getTodayString();
+        const docId = `${date}_${data.productId}_${Date.now()}`;
+        
+        // Try to get unit cost from Products (recipe costing)
+        let unitCost = 0;
+        const product = Products.data.find(p => p.id === data.productId);
+        if (product && product.costPerUnit) {
+            unitCost = product.costPerUnit;
+        }
+        
+        const wastageRecord = {
+            date: date,
+            productId: data.productId,
+            productName: data.productName,
+            category: data.category || '',
+            qty: data.qty,
+            reason: data.reason,
+            reasonLabel: this.wastageReasonLabels[data.reason] || data.reason,
+            reasonCategory: this.getWastageCategory(data.reason),
+            unitCost: unitCost,
+            totalCost: unitCost * data.qty,
+            sourceAction: data.sourceAction || 'manual',
+            notes: data.notes || '',
+            recordedBy: Auth.currentUser?.displayName || Auth.currentUser?.email,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        
+        await db.collection('dailyWastage').doc(docId).set(wastageRecord);
+        
+        // Also log as stock movement for audit trail
+        await this.createStockMovement({
+            productId: data.productId,
+            type: 'wastage',
+            qty: -data.qty,
+            date: date,
+            notes: `${this.wastageReasonLabels[data.reason] || data.reason}: ${data.qty} units (₱${(unitCost * data.qty).toFixed(2)})`,
+            performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+        });
+        
+        console.log('Created wastage record:', wastageRecord);
+        return docId;
+    },
+    
+    // Show wastage report/view
+    async showWastageReport() {
+        const date = this.selectedDate;
+        
+        try {
+            const snapshot = await db.collection('dailyWastage')
+                .where('date', '==', date)
+                .get();
+            
+            const wastageRecords = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            
+            // Sort by creation time
+            wastageRecords.sort((a, b) => {
+                const timeA = a.createdAt?.toMillis?.() || 0;
+                const timeB = b.createdAt?.toMillis?.() || 0;
+                return timeB - timeA;
+            });
+            
+            // Calculate totals by category
+            let totalWastage = 0, totalRecycled = 0, totalGiveaway = 0;
+            let wastageCount = 0, recycledCount = 0, giveawayCount = 0;
+            
+            wastageRecords.forEach(r => {
+                if (r.reasonCategory === 'wastage') {
+                    totalWastage += r.totalCost || 0;
+                    wastageCount += r.qty || 0;
+                } else if (r.reasonCategory === 'recycled') {
+                    totalRecycled += r.totalCost || 0;
+                    recycledCount += r.qty || 0;
+                } else if (r.reasonCategory === 'giveaway') {
+                    totalGiveaway += r.totalCost || 0;
+                    giveawayCount += r.qty || 0;
+                }
+            });
+            
+            const isToday = date === this.getTodayString();
+            
+            let tableRows = '';
+            if (wastageRecords.length === 0) {
+                tableRows = `
+                    <tr>
+                        <td colspan="5" style="padding:24px;text-align:center;color:#666;">
+                            No wastage recorded for ${this.formatDateShort(date)}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                wastageRecords.forEach(r => {
+                    const categoryColor = r.reasonCategory === 'wastage' ? '#C62828' : 
+                                         r.reasonCategory === 'recycled' ? '#2E7D32' : '#1565C0';
+                    tableRows += `
+                        <tr style="border-bottom:1px solid #eee;">
+                            <td style="padding:10px;">${r.productName}</td>
+                            <td style="padding:10px;text-align:center;">${r.qty}</td>
+                            <td style="padding:10px;font-size:0.85rem;">${r.reasonLabel || r.reason}</td>
+                            <td style="padding:10px;text-align:right;color:${categoryColor};font-weight:500;">
+                                ₱${(r.totalCost || 0).toFixed(2)}
+                            </td>
+                            <td style="padding:10px;text-align:center;">
+                                ${isToday ? `
+                                    <button class="btn btn-sm" onclick="Inventory.restoreFromWastage('${r.id}')" 
+                                            style="background:#E8F5E9;border:1px solid #4CAF50;color:#2E7D32;padding:4px 8px;font-size:0.8rem;">
+                                        ↩️ Restore
+                                    </button>
+                                ` : '-'}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            Modal.open({
+                title: `🗑️ Wastage Report - ${this.formatDateShort(date)}`,
+                content: `
+                    <!-- Summary Cards -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+                        <div style="background:#FFEBEE;padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.8rem;color:#C62828;">Pure Wastage</div>
+                            <div style="font-size:1.3rem;font-weight:bold;color:#C62828;">₱${totalWastage.toFixed(2)}</div>
+                            <div style="font-size:0.75rem;color:#666;">${wastageCount} items</div>
+                        </div>
+                        <div style="background:#E8F5E9;padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.8rem;color:#2E7D32;">Recycled</div>
+                            <div style="font-size:1.3rem;font-weight:bold;color:#2E7D32;">₱${totalRecycled.toFixed(2)}</div>
+                            <div style="font-size:0.75rem;color:#666;">${recycledCount} items</div>
+                        </div>
+                        <div style="background:#E3F2FD;padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.8rem;color:#1565C0;">Giveaways</div>
+                            <div style="font-size:1.3rem;font-weight:bold;color:#1565C0;">₱${totalGiveaway.toFixed(2)}</div>
+                            <div style="font-size:0.75rem;color:#666;">${giveawayCount} items</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Wastage Table -->
+                    <div style="max-height:350px;overflow-y:auto;border:1px solid #ddd;border-radius:8px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                            <thead style="background:#F5F5F5;position:sticky;top:0;">
+                                <tr>
+                                    <th style="padding:10px;text-align:left;">Product</th>
+                                    <th style="padding:10px;text-align:center;">Qty</th>
+                                    <th style="padding:10px;text-align:left;">Reason</th>
+                                    <th style="padding:10px;text-align:right;">Cost</th>
+                                    <th style="padding:10px;text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Total -->
+                    <div style="margin-top:12px;padding:12px;background:#FFF3E0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:600;">Total Loss Value:</span>
+                        <span style="font-size:1.3rem;font-weight:bold;color:#E65100;">
+                            ₱${(totalWastage + totalRecycled + totalGiveaway).toFixed(2)}
+                        </span>
+                    </div>
+                    
+                    ${isToday ? `
+                        <div style="margin-top:8px;font-size:0.8rem;color:#666;text-align:center;">
+                            💡 Click "Restore" to put items back into today's inventory if marked by mistake
+                        </div>
+                    ` : ''}
+                `,
+                width: '650px',
+                showCancel: false,
+                saveText: 'Close'
+            });
+            
+        } catch (error) {
+            console.error('Error loading wastage report:', error);
+            Toast.error('Failed to load wastage report');
+        }
+    },
+    
+    // Restore item from wastage back to inventory
+    async restoreFromWastage(wastageId) {
+        try {
+            // Get the wastage record
+            const doc = await db.collection('dailyWastage').doc(wastageId).get();
+            if (!doc.exists) {
+                Toast.error('Wastage record not found');
+                return;
+            }
+            
+            const wastage = doc.data();
+            const today = this.getTodayString();
+            
+            // Only allow restore for today's wastage
+            if (wastage.date !== today) {
+                Toast.error('Can only restore today\'s wastage items');
+                return;
+            }
+            
+            // Confirm restore
+            if (!confirm(`Restore ${wastage.qty} x ${wastage.productName} back to inventory?`)) {
+                return;
+            }
+            
+            const docId = `${today}_${wastage.productId}`;
+            
+            // Check if there's already a daily inventory record for this product
+            const existingRecord = this.dailyRecords.find(r => r.productId === wastage.productId);
+            
+            if (existingRecord) {
+                // Add to existing carryover
+                await db.collection('dailyInventory').doc(docId).update({
+                    carryoverQty: firebase.firestore.FieldValue.increment(wastage.qty),
+                    totalAvailable: firebase.firestore.FieldValue.increment(wastage.qty),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                // Create new record
+                const newRecord = {
+                    productId: wastage.productId,
+                    productName: wastage.productName,
+                    category: wastage.category || '',
+                    date: today,
+                    
+                    carryoverQty: wastage.qty,
+                    newProductionQty: 0,
+                    totalAvailable: wastage.qty,
+                    
+                    reservedQty: 0,
+                    soldQty: 0,
+                    cancelledQty: 0,
+                    
+                    openingLocked: false,
+                    status: 'open',
+                    actualRemaining: null,
+                    variance: null,
+                    varianceRemarks: null,
+                    
+                    notes: 'Restored from wastage',
+                    createdBy: Auth.currentUser?.displayName || Auth.currentUser?.email,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('dailyInventory').doc(docId).set(newRecord);
+            }
+            
+            // Log stock movement
+            await this.createStockMovement({
+                productId: wastage.productId,
+                type: 'restore',
+                qty: wastage.qty,
+                date: today,
+                notes: `Restored from wastage - was marked as ${wastage.reasonLabel || wastage.reason} by mistake`,
+                performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+            });
+            
+            // Delete the wastage record
+            await db.collection('dailyWastage').doc(wastageId).delete();
+            
+            Toast.success(`Restored ${wastage.qty} x ${wastage.productName} to inventory`);
+            
+            // Refresh the wastage report
+            Modal.close();
+            await this.load();
+            this.render();
+            
+        } catch (error) {
+            console.error('Error restoring from wastage:', error);
+            Toast.error('Failed to restore: ' + error.message);
+        }
+    },
+
+    // Quick fix to zero out a product's inventory (for stale items)
+    async zeroOutProduct(productId) {
+        const today = this.getTodayString();
+        const docId = `${today}_${productId}`;
+        const record = this.dailyRecords.find(r => r.productId === productId);
+        
+        if (!record) {
+            Toast.error('Product not found');
+            return;
+        }
+        
+        const stock = this.calculateStock(record);
+        if (stock.totalAvailable === 0) {
+            Toast.info('Already at zero');
+            return;
+        }
+        
+        try {
+            // Create wastage record first
+            await this.createWastageRecord({
+                productId: productId,
+                productName: record.productName,
+                category: record.category,
+                qty: stock.totalAvailable,
+                reason: 'stale_discarded',
+                sourceAction: 'adjustment',
+                notes: 'Zeroed out via quick fix'
+            });
+            
+            // Update inventory to zero
+            await db.collection('dailyInventory').doc(docId).update({
+                carryoverQty: 0,
+                newProductionQty: 0,
+                totalAvailable: 0,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            Toast.success(`Zeroed out ${record.productName} (${stock.totalAvailable} marked as stale)`);
+        } catch (error) {
+            console.error('Error zeroing out product:', error);
+            Toast.error('Failed: ' + error.message);
         }
     }
     
