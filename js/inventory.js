@@ -205,17 +205,14 @@ const Inventory = {
                 </div>
 
                 ${isToday ? `
+                    <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
+                        + Add Stock
+                    </button>
                     ${this.pendingCarryover.length > 0 ? `
                         <button class="btn btn-primary" onclick="Inventory.showCarryoverModal()" style="background:#FF9800;border-color:#F57C00;">
-                            📦 Process Carryover First (${this.pendingCarryover.length})
-                        </button>
-                        <button class="btn btn-secondary" disabled style="opacity:0.5;cursor:not-allowed;" title="Process carryover first">
-                            + Add Stock
+                            📦 Process Carryover (${this.pendingCarryover.length})
                         </button>
                     ` : `
-                        <button class="btn btn-primary" onclick="Inventory.showProductionModal()">
-                            + Add Stock
-                        </button>
                         <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()">
                             📦 Process Carryover
                         </button>
@@ -270,18 +267,17 @@ const Inventory = {
                     <h3>No Inventory Records</h3>
                     <p>No stock has been recorded for ${this.formatDate(this.selectedDate)}.</p>
                     ${isToday ? `
+                        <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
+                            + Add First Stock
+                        </button>
                         ${this.pendingCarryover.length > 0 ? `
                             <div style="background:#FFF3E0;padding:12px;border-radius:8px;margin:16px 0;color:#E65100;">
-                                ⚠️ <strong>${this.pendingCarryover.length} products</strong> have leftover from yesterday. Process carryover first!
+                                💡 <strong>${this.pendingCarryover.length} products</strong> have leftover from yesterday that can be carried over.
                             </div>
-                            <button class="btn btn-primary" onclick="Inventory.showCarryoverModal()" style="margin-top: 8px;background:#FF9800;border-color:#F57C00;">
-                                📦 Process Carryover First
+                            <button class="btn btn-secondary" onclick="Inventory.showCarryoverModal()" style="margin-top: 8px;background:#FF9800;border-color:#F57C00;">
+                                📦 Process Carryover
                             </button>
-                        ` : `
-                            <button class="btn btn-primary" onclick="Inventory.showProductionModal()" style="margin-top: 16px;">
-                                + Add First Stock
-                            </button>
-                        `}
+                        ` : ''}
                     ` : ''}
                 </div>
             `;
@@ -1463,45 +1459,70 @@ const Inventory = {
                 if (!record) continue;
                 
                 const docId = `${date}_${item.productId}`;
-
-                // Create today's record with carryover only
-                const newRecord = {
-                    productId: item.productId,
-                    productName: record.productName,
-                    category: record.category,
-                    date: date,
-                    
-                    carryoverQty: item.qty,
-                    newProductionQty: 0,
-                    totalAvailable: item.qty,
-                    
-                    reservedQty: 0,
-                    soldQty: 0,
-                    cancelledQty: 0,
-                    
-                    openingLocked: false,
-                    status: 'open',
-                    actualRemaining: null,
-                    variance: null,
-                    varianceRemarks: null,
-                    
-                    notes: 'Carryover only - no new production yet',
-                    createdBy: Auth.currentUser?.displayName || Auth.currentUser?.email,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                };
                 
-                await db.collection('dailyInventory').doc(docId).set(newRecord);
+                // Check if today's record already exists
+                const existingRecord = this.dailyRecords.find(r => r.productId === item.productId);
                 
-                // Log movement
-                await this.createStockMovement({
-                    productId: item.productId,
-                    type: 'carryover',
-                    qty: item.qty,
-                    date: date,
-                    notes: 'Carryover from previous day',
-                    performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
-                });
+                if (existingRecord) {
+                    // UPDATE existing record - add carryover to existing quantities
+                    const newCarryover = (existingRecord.carryoverQty || 0) + item.qty;
+                    const newTotal = newCarryover + (existingRecord.newProductionQty || 0);
+                    
+                    await db.collection('dailyInventory').doc(docId).update({
+                        carryoverQty: newCarryover,
+                        totalAvailable: newTotal,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    // Log movement
+                    await this.createStockMovement({
+                        productId: item.productId,
+                        type: 'carryover',
+                        qty: item.qty,
+                        date: date,
+                        notes: 'Carryover added to existing record',
+                        performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                    });
+                } else {
+                    // CREATE new record with carryover only
+                    const newRecord = {
+                        productId: item.productId,
+                        productName: record.productName,
+                        category: record.category,
+                        date: date,
+                        
+                        carryoverQty: item.qty,
+                        newProductionQty: 0,
+                        totalAvailable: item.qty,
+                        
+                        reservedQty: 0,
+                        soldQty: 0,
+                        cancelledQty: 0,
+                        
+                        openingLocked: false,
+                        status: 'open',
+                        actualRemaining: null,
+                        variance: null,
+                        varianceRemarks: null,
+                        
+                        notes: 'Carryover only - no new production yet',
+                        createdBy: Auth.currentUser?.displayName || Auth.currentUser?.email,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    await db.collection('dailyInventory').doc(docId).set(newRecord);
+                    
+                    // Log movement
+                    await this.createStockMovement({
+                        productId: item.productId,
+                        type: 'carryover',
+                        qty: item.qty,
+                        date: date,
+                        notes: 'Carryover from previous day',
+                        performedBy: Auth.currentUser?.displayName || Auth.currentUser?.email
+                    });
+                }
             }
             
             // Process wastage items (unchecked)

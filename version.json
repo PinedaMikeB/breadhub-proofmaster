@@ -1,9 +1,9 @@
 {
-    "version": "1.5.0",
-    "releaseDate": "2026-01-15",
+    "version": "1.6.0",
+    "releaseDate": "2026-01-22",
     "changes": [
-        "Added JIT Finishing System",
-        "Base Bread inventory tracking",
-        "Version update checker"
+        "Inventory: Add Stock button now always enabled (not blocked by pending carryover)",
+        "Inventory: Carryover now adds to existing record instead of blocking/duplicating",
+        "Improved carryover workflow flexibility"
     ]
 }
