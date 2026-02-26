@@ -554,6 +554,15 @@ const Products = {
             const variantsToggle = document.getElementById('variantsToggleSection');
             if (variantsToggle) variantsToggle.style.display = 'none';
         }
+        
+        // Auto-calculate costs for all existing variants
+        if (product.hasVariants && product.variants) {
+            setTimeout(() => {
+                product.variants.forEach((v, idx) => {
+                    this.updateVariantCost(idx);
+                });
+            }, 150);
+        }
     },
 
     async view(id) {
@@ -1752,12 +1761,75 @@ const Products = {
     },
 
     calculateProductCost(product) {
+        const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
+        const isDrinks = mainCat === 'drinks';
+        
+        let doughCost = 0;
+        let fillingCost = 0;
+        let toppingCost = 0;
+        let ingredientsCost = 0;
+        
+        // For variant products, calculate from first variant (primary)
+        if (product.hasVariants && product.variants && product.variants.length > 0) {
+            const v = product.variants[0];
+            const recipe = v.recipe || {};
+            
+            if (isDrinks) {
+                // Calculate ingredients cost for drinks
+                if (recipe.ingredients && Array.isArray(recipe.ingredients)) {
+                    recipe.ingredients.forEach(ing => {
+                        const price = IngredientPrices.getCheapest(ing.ingredientId);
+                        const costPerGram = price?.costPerGram || 0;
+                        ingredientsCost += costPerGram * (ing.amount || 0);
+                    });
+                }
+            } else {
+                // Calculate dough cost for breads
+                const dough = Doughs.getById(recipe.doughRecipeId);
+                doughCost = dough ? (dough.costPerGram || 0) * (recipe.doughWeight || 0) : 0;
+                
+                // Fillings
+                if (recipe.fillings && Array.isArray(recipe.fillings)) {
+                    recipe.fillings.forEach(f => {
+                        const filling = Fillings.getById(f.recipeId);
+                        if (filling) fillingCost += (filling.costPerGram || 0) * (f.weight || 0);
+                    });
+                }
+            }
+            
+            // Toppings (both breads and drinks)
+            if (recipe.toppings && Array.isArray(recipe.toppings)) {
+                recipe.toppings.forEach(t => {
+                    const topping = Toppings.getById(t.recipeId);
+                    if (topping) toppingCost += (topping.costPerGram || 0) * (t.weight || 0);
+                });
+            }
+            
+            const packagingCost = recipe.packagingCost || product.costs?.packaging || 0;
+            const laborCost = recipe.laborCost || product.costs?.labor || 0;
+            const totalCost = doughCost + fillingCost + toppingCost + ingredientsCost + packagingCost + laborCost;
+            const markupPercent = recipe.markupPercent || product.pricing?.markupPercent || 40;
+            const suggestedSRP = totalCost * (1 + markupPercent / 100);
+            
+            return {
+                doughCost,
+                fillingCost,
+                toppingCost,
+                ingredientsCost,
+                packagingCost,
+                laborCost,
+                totalCost,
+                markupPercent,
+                suggestedSRP
+            };
+        }
+        
+        // Single product (non-variant) - original logic
         const dough = Doughs.getById(product.doughRecipeId);
         const doughWeight = product.portioning?.doughWeight || 0;
-        const doughCost = dough ? (dough.costPerGram || 0) * doughWeight : 0;
+        doughCost = dough ? (dough.costPerGram || 0) * doughWeight : 0;
         
         // Handle legacy single filling/topping OR new array format
-        let fillingCost = 0;
         if (product.fillings && Array.isArray(product.fillings)) {
             product.fillings.forEach(f => {
                 const filling = Fillings.getById(f.recipeId);
@@ -1771,7 +1843,6 @@ const Products = {
             fillingCost = filling ? (filling.costPerGram || 0) * fillingWeight : 0;
         }
         
-        let toppingCost = 0;
         if (product.toppings && Array.isArray(product.toppings)) {
             product.toppings.forEach(t => {
                 const topping = Toppings.getById(t.recipeId);
@@ -1797,6 +1868,7 @@ const Products = {
             doughCost,
             fillingCost,
             toppingCost,
+            ingredientsCost: 0,
             packagingCost,
             laborCost,
             totalCost,
