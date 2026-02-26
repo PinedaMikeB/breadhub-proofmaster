@@ -17,7 +17,8 @@ const Products = {
     // Main categories for analytics
     mainCategories: [
         { value: 'bread', label: 'Bread & Pastries', emoji: '🍞' },
-        { value: 'drinks', label: 'Drinks & Beverages', emoji: '🥤' }
+        { value: 'drinks', label: 'Drinks & Beverages', emoji: '🥤' },
+        { value: 'bundle', label: 'Bundles & Promos', emoji: '🎁' }
     ],
     
     // Subcategories with their parent main category
@@ -36,7 +37,11 @@ const Products = {
         // DRINKS subcategories
         { value: 'drinks', label: 'Drinks', emoji: '🥤', mainCategory: 'drinks' },
         { value: 'coffee', label: 'Coffee', emoji: '☕', mainCategory: 'drinks' },
-        { value: 'non-coffee', label: 'Non-Coffee Drinks', emoji: '🧃', mainCategory: 'drinks' }
+        { value: 'non-coffee', label: 'Non-Coffee Drinks', emoji: '🧃', mainCategory: 'drinks' },
+        // BUNDLE subcategories
+        { value: 'bundle', label: 'Bundles', emoji: '🎁', mainCategory: 'bundle' },
+        { value: 'meal-bundle', label: 'Meal Bundles', emoji: '🍱', mainCategory: 'bundle' },
+        { value: 'promo-bundle', label: 'Promo Bundles', emoji: '🏷️', mainCategory: 'bundle' }
     ],
     
     // Get main category from subcategory
@@ -63,35 +68,53 @@ const Products = {
         
         // Update badge
         if (badge) {
+            const badgeColors = {
+                bread: { bg: '#FFF3E0', color: '#E65100', label: '🍞 Bread & Pastries' },
+                drinks: { bg: '#E3F2FD', color: '#1565C0', label: '🥤 Drinks & Beverages' },
+                bundle: { bg: '#F3E5F5', color: '#7B1FA2', label: '🎁 Bundles' }
+            };
+            const bc = badgeColors[mainCat] || badgeColors.bread;
             badge.innerHTML = `
-                <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${mainCat === 'bread' ? '#FFF3E0' : '#E3F2FD'}; color: ${mainCat === 'bread' ? '#E65100' : '#1565C0'};">
-                    ${mainCat === 'bread' ? '🍞 Bread & Pastries' : '🥤 Drinks & Beverages'}
+                <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${bc.bg}; color: ${bc.color};">
+                    ${bc.label}
                 </span>
             `;
         }
         
         const isDrinks = mainCat === 'drinks';
+        const isBundle = mainCat === 'bundle';
         
         // Hide/show bread-only sections
         const baseBreadSection = document.getElementById('baseBreadSection');
         if (baseBreadSection) {
-            baseBreadSection.style.display = isDrinks ? 'none' : 'block';
+            baseBreadSection.style.display = (isDrinks || isBundle) ? 'none' : 'block';
         }
         
         // For drinks: auto-enable variants and hide single recipe mode
         const variantsCheckbox = document.getElementById('hasVariantsCheckbox');
         const variantsToggle = document.getElementById('variantsToggleSection');
+        const singleMode = document.getElementById('singleRecipeMode');
+        const variantsMode = document.getElementById('variantsMode');
+        const bundleMode = document.getElementById('bundleMode');
         
-        if (isDrinks) {
-            // Auto-enable variants for drinks (drinks always need sizes)
+        if (isBundle) {
+            // BUNDLE MODE: hide everything except bundle picker
+            if (variantsToggle) variantsToggle.style.display = 'none';
+            if (singleMode) singleMode.style.display = 'none';
+            if (variantsMode) variantsMode.style.display = 'none';
+            if (bundleMode) bundleMode.style.display = 'block';
+            if (variantsCheckbox) variantsCheckbox.checked = false;
+        } else if (isDrinks) {
+            // DRINKS MODE
+            if (bundleMode) bundleMode.style.display = 'none';
             if (variantsCheckbox && !variantsCheckbox.checked) {
                 variantsCheckbox.checked = true;
                 this.toggleVariantMode();
             }
-            // Hide variants toggle (always on for drinks)
             if (variantsToggle) variantsToggle.style.display = 'none';
         } else {
-            // Show variants toggle for bread
+            // BREAD MODE
+            if (bundleMode) bundleMode.style.display = 'none';
             if (variantsToggle) variantsToggle.style.display = 'block';
         }
         
@@ -303,6 +326,8 @@ const Products = {
             const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
             const mainCatBadge = mainCat === 'bread' 
                 ? '<span style="font-size:0.7rem;padding:2px 6px;background:#FFF3E0;color:#E65100;border-radius:10px;">🍞</span>'
+                : mainCat === 'bundle'
+                ? '<span style="font-size:0.7rem;padding:2px 6px;background:#F3E5F5;color:#7B1FA2;border-radius:10px;">🎁</span>'
                 : '<span style="font-size:0.7rem;padding:2px 6px;background:#E3F2FD;color:#1565C0;border-radius:10px;">🥤</span>';
             
             // Check if product is disabled (master switch)
@@ -325,12 +350,27 @@ const Products = {
             return `
             <div class="recipe-card" data-id="${product.id}" style="position:relative;${isDisabled ? 'opacity:0.6;' : ''}">
                 ${stockBadge}
-                <div class="recipe-card-header" style="background: linear-gradient(135deg, ${mainCat === 'bread' ? '#8E44AD, #9B59B6' : '#1565C0, #42A5F5'});">
+                <div class="recipe-card-header" style="background: linear-gradient(135deg, ${mainCat === 'bundle' ? '#7B1FA2, #AB47BC' : mainCat === 'bread' ? '#8E44AD, #9B59B6' : '#1565C0, #42A5F5'});">
                     <h3>${product.name}</h3>
                     <span class="version">${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 <div class="recipe-card-body">
-                    ${product.hasVariants && product.variants?.length > 0 ? `
+                    ${product.isBundle && product.bundleItems?.length > 0 ? `
+                        <!-- Bundle Display -->
+                        <div style="background: #F3E5F5; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-size: 0.85rem; font-weight: 600; color: #7B1FA2; margin-bottom: 4px;">🎁 ${product.bundleItems.length} Items</div>
+                            ${product.bundleItems.map(item => `
+                                <div style="font-size: 0.78rem; background: white; padding: 2px 6px; border-radius: 4px; margin-bottom: 2px;">
+                                    ${item.productName}${item.variantName ? ' — ' + item.variantName : ''} <span style="text-decoration:line-through;color:#999;">₱${(item.retailPrice||0).toFixed(0)}</span>
+                                </div>
+                            `).join('')}
+                            <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="text-decoration: line-through; color: #999; font-size:0.8rem;">₱${(product.bundleTotalRetail||0).toFixed(0)}</span>
+                                <span style="font-size: 1.2rem; font-weight: bold; color: #7B1FA2;">₱${(product.bundlePrice||0).toFixed(0)}</span>
+                                <span style="font-size: 0.7rem; background: #7B1FA2; color: white; padding: 2px 6px; border-radius: 10px;">Save ₱${((product.bundleTotalRetail||0)-(product.bundlePrice||0)).toFixed(0)}</span>
+                            </div>
+                        </div>
+                    ` : product.hasVariants && product.variants?.length > 0 ? `
                         <!-- Variants Display -->
                         <div style="background: #E3F2FD; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
                             <div style="font-size: 0.85rem; font-weight: 600; color: #1565C0; margin-bottom: 4px;">
@@ -546,13 +586,23 @@ const Products = {
         });
         this.setupCostCalculation();
         
-        // After modal opens, apply drinks-specific UI if needed
+        // After modal opens, apply category-specific UI
         const isDrinks = correctMainCat === 'drinks';
-        if (isDrinks) {
+        const isBundle = correctMainCat === 'bundle';
+        
+        if (isDrinks || isBundle) {
             const baseBreadSection = document.getElementById('baseBreadSection');
             if (baseBreadSection) baseBreadSection.style.display = 'none';
             const variantsToggle = document.getElementById('variantsToggleSection');
             if (variantsToggle) variantsToggle.style.display = 'none';
+        }
+        if (isBundle) {
+            const singleMode = document.getElementById('singleRecipeMode');
+            const variantsMode = document.getElementById('variantsMode');
+            if (singleMode) singleMode.style.display = 'none';
+            if (variantsMode) variantsMode.style.display = 'none';
+            // Auto-calculate bundle summary
+            setTimeout(() => this.updateBundleSummary(), 150);
         }
         
         // Auto-calculate costs for all existing variants
@@ -592,6 +642,7 @@ const Products = {
         // Group subcategories by main category
         const breadCategories = this.defaultCategories.filter(c => c.mainCategory === 'bread');
         const drinksCategories = this.defaultCategories.filter(c => c.mainCategory === 'drinks');
+        const bundleCategories = this.defaultCategories.filter(c => c.mainCategory === 'bundle');
         
         return `
             <form id="productForm">
@@ -612,6 +663,11 @@ const Products = {
                             </optgroup>
                             <optgroup label="🥤 DRINKS & BEVERAGES">
                                 ${drinksCategories.map(cat => 
+                                    `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
+                                ).join('')}
+                            </optgroup>
+                            <optgroup label="🎁 BUNDLES & PROMOS">
+                                ${bundleCategories.map(cat => 
                                     `<option value="${cat.value}" ${product.category === cat.value ? 'selected' : ''}>${cat.emoji} ${cat.label}</option>`
                                 ).join('')}
                             </optgroup>
@@ -871,6 +927,57 @@ const Products = {
                             style="background: #2196F3; color: white; margin-top: 12px; width: 100%;">
                         ➕ Add Another Variant
                     </button>
+                </div>
+                
+                <!-- BUNDLE MODE -->
+                <div id="bundleMode" style="display: ${currentMainCat === 'bundle' ? 'block' : 'none'};">
+                    <div style="background: linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #9C27B0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h4 style="margin: 0; color: #7B1FA2;">🎁 Bundle Items</h4>
+                            <button type="button" class="btn btn-sm" onclick="Products.addBundleItem()" 
+                                    style="background: #9C27B0; color: white; padding: 6px 14px;">➕ Add Product</button>
+                        </div>
+                        <div id="bundleItemsContainer">
+                            ${product.bundleItems && product.bundleItems.length > 0 
+                                ? product.bundleItems.map((item, idx) => this.getBundleItemHTML(idx, item)).join('') 
+                                : '<p style="color: #7B1FA2; font-size: 0.9rem; margin: 8px 0;">No items yet. Click "➕ Add Product" to build your bundle.</p>'}
+                        </div>
+                        
+                        <!-- Bundle Pricing Summary -->
+                        <div style="background: white; padding: 16px; border-radius: 10px; margin-top: 16px; border: 2px solid #CE93D8;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                                <div style="text-align: center; padding: 12px; background: #FFEBEE; border-radius: 8px;">
+                                    <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">Total Retail Price</div>
+                                    <div id="bundleTotalRetail" style="font-size: 1.5rem; font-weight: bold; color: #C62828; text-decoration: line-through;">₱0.00</div>
+                                </div>
+                                <div style="text-align: center; padding: 12px; background: #E8F5E9; border-radius: 8px;">
+                                    <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">Total Cost</div>
+                                    <div id="bundleTotalCost" style="font-size: 1.5rem; font-weight: bold; color: #2E7D32;">₱0.00</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="form-group" style="margin: 0;">
+                                    <label style="font-weight: bold; color: #7B1FA2;">🎁 Bundle Price (₱) *</label>
+                                    <input type="number" name="bundlePrice" id="bundlePrice" class="form-input" step="0.50"
+                                           value="${product.bundlePrice || ''}" required
+                                           placeholder="Your discounted bundle price"
+                                           style="font-size: 1.3rem; font-weight: bold; text-align: center; border: 2px solid #9C27B0;"
+                                           oninput="Products.updateBundleSummary()">
+                                </div>
+                                <div style="text-align: center; padding: 12px;">
+                                    <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">You Save Customers</div>
+                                    <div id="bundleSavings" style="font-size: 1.5rem; font-weight: bold; color: #7B1FA2;">₱0.00</div>
+                                    <div id="bundleDiscount" style="font-size: 0.85rem; color: #9C27B0;">(0% off)</div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: #F3E5F5; padding: 10px; border-radius: 6px; margin-top: 12px; text-align: center;">
+                                <span style="font-size: 0.85rem; color: #666;">Bundle Margin: </span>
+                                <span id="bundleMargin" style="font-weight: bold; font-size: 1.1rem;">0%</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- WEBSITE SECTION (Unified Schema) -->
@@ -1424,6 +1531,189 @@ const Products = {
         container.insertAdjacentHTML('beforeend', this.getVariantToppingHTML(variantIdx, existingRows, {}));
     },
 
+    // ========== BUNDLE FUNCTIONS ==========
+    bundleItemCounter: 0,
+    
+    getBundleItemHTML(idx, item = {}) {
+        this.bundleItemCounter = Math.max(this.bundleItemCounter, idx + 1);
+        
+        // Build product options with variants as sub-options
+        const nonBundleProducts = this.data.filter(p => {
+            const mc = this.getMainCategory(p.category);
+            return mc !== 'bundle' && p.isEnabled !== false;
+        });
+        
+        let productOptions = '';
+        nonBundleProducts.forEach(p => {
+            if (p.hasVariants && p.variants && p.variants.length > 0) {
+                // Each variant is a separate option
+                p.variants.forEach((v, vidx) => {
+                    const optValue = `${p.id}|${vidx}`;
+                    const selected = item.productId === p.id && item.variantIndex === vidx ? 'selected' : '';
+                    const label = `${p.name} — ${v.name}${v.size ? ' (' + v.size + ')' : ''} • ₱${(v.price || 0).toFixed(2)}`;
+                    productOptions += `<option value="${optValue}" ${selected} data-price="${v.price || 0}" data-cost="${this._getVariantCost(p, vidx)}">${label}</option>`;
+                });
+            } else {
+                // Single product
+                const selected = item.productId === p.id && item.variantIndex == null ? 'selected' : '';
+                const label = `${p.name} • ₱${(p.finalSRP || 0).toFixed(2)}`;
+                const cost = this.calculateProductCost(p);
+                productOptions += `<option value="${p.id}" ${selected} data-price="${p.finalSRP || 0}" data-cost="${cost.totalCost}">${label}</option>`;
+            }
+        });
+        
+        return `
+            <div class="bundle-item-row" data-idx="${idx}" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #CE93D8;">
+                <span style="font-size: 1.1rem;">🛒</span>
+                <select name="bundle_${idx}_product" class="form-select" style="flex: 1; font-size: 0.9rem;"
+                        onchange="Products.onBundleItemChange(${idx})">
+                    <option value="">Select product...</option>
+                    ${productOptions}
+                </select>
+                <div style="text-align: right; min-width: 70px;">
+                    <div style="font-size: 0.75rem; color: #666;">Price</div>
+                    <div id="bundle_${idx}_price" style="font-weight: bold; color: #C62828;">₱${(item.retailPrice || 0).toFixed(2)}</div>
+                </div>
+                <div style="text-align: right; min-width: 70px;">
+                    <div style="font-size: 0.75rem; color: #666;">Cost</div>
+                    <div id="bundle_${idx}_cost" style="font-weight: bold; color: #2E7D32;">₱${(item.cost || 0).toFixed(2)}</div>
+                </div>
+                <button type="button" onclick="Products.removeBundleItem(${idx})" 
+                        style="border: none; background: #FFEBEE; color: #C62828; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 1rem;">✕</button>
+            </div>
+        `;
+    },
+    
+    _getVariantCost(product, variantIndex) {
+        const v = product.variants?.[variantIndex];
+        if (!v || !v.recipe) return 0;
+        const recipe = v.recipe;
+        const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
+        let cost = 0;
+        
+        if (mainCat === 'drinks') {
+            (recipe.ingredients || []).forEach(ing => {
+                const price = IngredientPrices.getCheapest(ing.ingredientId);
+                cost += (price?.costPerGram || 0) * (ing.amount || 0);
+            });
+        } else {
+            const dough = Doughs.getById(recipe.doughRecipeId);
+            cost += dough ? (dough.costPerGram || 0) * (recipe.doughWeight || 0) : 0;
+            (recipe.fillings || []).forEach(f => {
+                const filling = Fillings.getById(f.recipeId);
+                cost += (filling?.costPerGram || 0) * (f.weight || 0);
+            });
+        }
+        (recipe.toppings || []).forEach(t => {
+            const topping = Toppings.getById(t.recipeId);
+            cost += (topping?.costPerGram || 0) * (t.weight || 0);
+        });
+        cost += (recipe.packagingCost || 0) + (recipe.laborCost || 0);
+        return cost;
+    },
+    
+    addBundleItem() {
+        const container = document.getElementById('bundleItemsContainer');
+        const emptyMsg = container.querySelector('p');
+        if (emptyMsg) emptyMsg.remove();
+        
+        const idx = this.bundleItemCounter++;
+        container.insertAdjacentHTML('beforeend', this.getBundleItemHTML(idx, {}));
+    },
+    
+    removeBundleItem(idx) {
+        const row = document.querySelector(`.bundle-item-row[data-idx="${idx}"]`);
+        if (row) row.remove();
+        
+        const container = document.getElementById('bundleItemsContainer');
+        if (!container.querySelector('.bundle-item-row')) {
+            container.innerHTML = '<p style="color: #7B1FA2; font-size: 0.9rem; margin: 8px 0;">No items yet. Click "➕ Add Product" to build your bundle.</p>';
+        }
+        this.updateBundleSummary();
+    },
+    
+    onBundleItemChange(idx) {
+        const select = document.querySelector(`[name="bundle_${idx}_product"]`);
+        if (!select) return;
+        
+        const option = select.options[select.selectedIndex];
+        const price = parseFloat(option?.dataset?.price) || 0;
+        const cost = parseFloat(option?.dataset?.cost) || 0;
+        
+        const priceEl = document.getElementById(`bundle_${idx}_price`);
+        const costEl = document.getElementById(`bundle_${idx}_cost`);
+        if (priceEl) priceEl.textContent = `₱${price.toFixed(2)}`;
+        if (costEl) costEl.textContent = `₱${cost.toFixed(2)}`;
+        
+        this.updateBundleSummary();
+    },
+    
+    updateBundleSummary() {
+        let totalRetail = 0;
+        let totalCost = 0;
+        
+        document.querySelectorAll('.bundle-item-row').forEach(row => {
+            const idx = row.dataset.idx;
+            const select = document.querySelector(`[name="bundle_${idx}_product"]`);
+            if (select && select.value) {
+                const option = select.options[select.selectedIndex];
+                totalRetail += parseFloat(option?.dataset?.price) || 0;
+                totalCost += parseFloat(option?.dataset?.cost) || 0;
+            }
+        });
+        
+        const bundlePrice = parseFloat(document.getElementById('bundlePrice')?.value) || 0;
+        const savings = totalRetail - bundlePrice;
+        const discountPct = totalRetail > 0 ? (savings / totalRetail * 100) : 0;
+        const margin = bundlePrice > 0 ? ((bundlePrice - totalCost) / bundlePrice * 100) : 0;
+        
+        const retailEl = document.getElementById('bundleTotalRetail');
+        const costEl = document.getElementById('bundleTotalCost');
+        const savingsEl = document.getElementById('bundleSavings');
+        const discountEl = document.getElementById('bundleDiscount');
+        const marginEl = document.getElementById('bundleMargin');
+        
+        if (retailEl) retailEl.textContent = `₱${totalRetail.toFixed(2)}`;
+        if (costEl) costEl.textContent = `₱${totalCost.toFixed(2)}`;
+        if (savingsEl) savingsEl.textContent = `₱${savings.toFixed(2)}`;
+        if (discountEl) discountEl.textContent = `(${discountPct.toFixed(0)}% off)`;
+        if (marginEl) {
+            marginEl.textContent = `${margin.toFixed(1)}%`;
+            marginEl.style.color = margin >= 30 ? 'var(--success)' : margin >= 20 ? 'var(--warning)' : 'var(--danger)';
+        }
+    },
+    
+    collectBundleItems() {
+        const items = [];
+        document.querySelectorAll('.bundle-item-row').forEach(row => {
+            const idx = row.dataset.idx;
+            const select = document.querySelector(`[name="bundle_${idx}_product"]`);
+            if (select && select.value) {
+                const option = select.options[select.selectedIndex];
+                const value = select.value;
+                let productId, variantIndex = null;
+                
+                if (value.includes('|')) {
+                    [productId, variantIndex] = value.split('|');
+                    variantIndex = parseInt(variantIndex);
+                } else {
+                    productId = value;
+                }
+                
+                const product = this.data.find(p => p.id === productId);
+                items.push({
+                    productId,
+                    variantIndex,
+                    productName: product?.name || '',
+                    variantName: variantIndex !== null && product?.variants?.[variantIndex]?.name || '',
+                    retailPrice: parseFloat(option?.dataset?.price) || 0,
+                    cost: parseFloat(option?.dataset?.cost) || 0
+                });
+            }
+        });
+        return items;
+    },
+
     addFillingRow() {
         const container = document.getElementById('fillingsContainer');
         const emptyMsg = container.querySelector('p');
@@ -1586,7 +1876,47 @@ const Products = {
                     <span>${this.formatCategoryWithEmoji(product.category)}</span>
                 </div>
                 
-                ${hasVariants ? `
+                ${product.isBundle && product.bundleItems?.length > 0 ? `
+                    <!-- BUNDLE VIEW -->
+                    <div style="background: #F3E5F5; padding: 16px; border-radius: 12px; margin: 16px 0; border: 2px solid #CE93D8;">
+                        <h4 style="margin: 0 0 12px; color: #7B1FA2;">🎁 Bundle Items (${product.bundleItems.length})</h4>
+                        ${product.bundleItems.map(item => `
+                            <div style="background: white; padding: 10px; border-radius: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong>${item.productName}</strong>
+                                    ${item.variantName ? `<span style="color: #7B1FA2;"> — ${item.variantName}</span>` : ''}
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="text-decoration: line-through; color: #999; font-size: 0.85rem;">₱${(item.retailPrice||0).toFixed(2)}</div>
+                                    <div style="font-size: 0.8rem; color: #2E7D32;">Cost: ₱${(item.cost||0).toFixed(2)}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        <div style="background: white; padding: 12px; border-radius: 8px; margin-top: 12px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Total Retail:</span>
+                                <span style="text-decoration: line-through; color: #999;">${Utils.formatCurrency(product.bundleTotalRetail || 0)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Total Cost:</span>
+                                <span style="color: #2E7D32; font-weight: bold;">${Utils.formatCurrency(product.bundleTotalCost || 0)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: #F3E5F5; padding: 8px; border-radius: 6px; margin-top: 8px;">
+                                <span style="font-size: 1.1rem;"><strong>🎁 Bundle Price:</strong></span>
+                                <span style="font-size: 1.3rem; color: #7B1FA2; font-weight: bold;">${Utils.formatCurrency(product.bundlePrice || 0)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 6px;">
+                                <span>Customer Saves:</span>
+                                <span style="color: #7B1FA2; font-weight: bold;">₱${((product.bundleTotalRetail||0) - (product.bundlePrice||0)).toFixed(2)} (${product.bundleTotalRetail > 0 ? (((product.bundleTotalRetail - product.bundlePrice) / product.bundleTotalRetail) * 100).toFixed(0) : 0}% off)</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                                <span>Margin:</span>
+                                <span style="font-weight: bold; color: ${actualMargin >= 30 ? 'var(--success)' : actualMargin >= 20 ? 'var(--warning)' : 'var(--danger)'};">${actualMargin.toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>
+                ` : hasVariants ? `
                     <!-- VARIANTS VIEW -->
                     <div style="background: #E3F2FD; padding: 16px; border-radius: 12px; margin: 16px 0;">
                         <h4 style="margin: 0 0 12px; color: #1565C0;">🏷️ Variants (${product.variants.length})</h4>
@@ -1763,6 +2093,21 @@ const Products = {
     calculateProductCost(product) {
         const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
         const isDrinks = mainCat === 'drinks';
+        const isBundle = mainCat === 'bundle';
+        
+        // Bundle products
+        if (isBundle && product.bundleItems) {
+            const totalCost = product.bundleItems.reduce((sum, i) => sum + (i.cost || 0), 0);
+            const totalRetail = product.bundleItems.reduce((sum, i) => sum + (i.retailPrice || 0), 0);
+            return {
+                doughCost: 0, fillingCost: 0, toppingCost: 0, ingredientsCost: 0,
+                packagingCost: 0, laborCost: 0,
+                totalCost,
+                totalRetail,
+                markupPercent: 0,
+                suggestedSRP: totalRetail
+            };
+        }
         
         let doughCost = 0;
         let fillingCost = 0;
@@ -1882,12 +2227,54 @@ const Products = {
         const form = document.getElementById('productForm');
         const formData = new FormData(form);
         
-        // Check if variants mode is enabled
+        // Check what mode we're in
         const hasVariants = document.getElementById('hasVariantsCheckbox')?.checked || false;
+        const mainCat = this.getMainCategory(formData.get('category'));
+        const isBundle = mainCat === 'bundle';
         
         let data;
         
-        if (hasVariants) {
+        if (isBundle) {
+            // ========== BUNDLE MODE ==========
+            const bundleItems = this.collectBundleItems();
+            const bundlePrice = parseFloat(document.getElementById('bundlePrice')?.value) || 0;
+            
+            if (bundleItems.length < 2) {
+                Toast.error('A bundle needs at least 2 products');
+                return;
+            }
+            if (!bundlePrice || bundlePrice <= 0) {
+                Toast.error('Please enter a bundle price');
+                return;
+            }
+            
+            const totalRetail = bundleItems.reduce((sum, i) => sum + i.retailPrice, 0);
+            const totalCost = bundleItems.reduce((sum, i) => sum + i.cost, 0);
+            
+            data = {
+                name: formData.get('name'),
+                category: formData.get('category'),
+                mainCategory: 'bundle',
+                isBundle: true,
+                bundleItems: bundleItems,
+                bundlePrice: bundlePrice,
+                bundleTotalRetail: totalRetail,
+                bundleTotalCost: totalCost,
+                finalSRP: bundlePrice,
+                hasVariants: false,
+                variants: [],
+                // Minimal defaults for backward compat
+                doughRecipeId: '',
+                fillings: [],
+                toppings: [],
+                portioning: { doughWeight: 0, finalWeight: 0 },
+                secondProof: { duration: 0, temperature: 0, humidity: 0 },
+                baking: { ovenTempTop: 0, ovenTempBottom: 0, duration: 0, rotateAt: 0 },
+                costs: { packaging: 0, labor: 0 },
+                pricing: { markupPercent: 0 },
+                notes: formData.get('notes') || ''
+            };
+        } else if (hasVariants) {
             // ========== VARIANTS MODE ==========
             const variants = this.collectVariants();
             
