@@ -69,6 +69,62 @@ const Products = {
                 </span>
             `;
         }
+        
+        const isDrinks = mainCat === 'drinks';
+        
+        // Hide/show bread-only sections
+        const baseBreadSection = document.getElementById('baseBreadSection');
+        if (baseBreadSection) {
+            baseBreadSection.style.display = isDrinks ? 'none' : 'block';
+        }
+        
+        // For drinks: auto-enable variants and hide single recipe mode
+        const variantsCheckbox = document.getElementById('hasVariantsCheckbox');
+        const variantsToggle = document.getElementById('variantsToggleSection');
+        
+        if (isDrinks) {
+            // Auto-enable variants for drinks (drinks always need sizes)
+            if (variantsCheckbox && !variantsCheckbox.checked) {
+                variantsCheckbox.checked = true;
+                this.toggleVariantMode();
+            }
+            // Hide variants toggle (always on for drinks)
+            if (variantsToggle) variantsToggle.style.display = 'none';
+        } else {
+            // Show variants toggle for bread
+            if (variantsToggle) variantsToggle.style.display = 'block';
+        }
+        
+        // Rebuild existing variant sections to match new category
+        this.rebuildVariantsForCategory(mainCat);
+    },
+    
+    // Rebuild all variant sections when category changes (bread <-> drinks)
+    rebuildVariantsForCategory(mainCategory) {
+        const variantsList = document.getElementById('variantsList');
+        if (!variantsList) return;
+        
+        const existingSections = variantsList.querySelectorAll('.variant-section');
+        if (existingSections.length === 0) return;
+        
+        // Collect current variant data before rebuilding
+        const currentVariants = [];
+        existingSections.forEach(section => {
+            const idx = section.dataset.idx;
+            const name = document.querySelector(`[name="variant_${idx}_name"]`)?.value || '';
+            const size = document.querySelector(`[name="variant_${idx}_size"]`)?.value || '';
+            const price = document.querySelector(`[name="variant_${idx}_price"]`)?.value || '';
+            const packagingCost = document.querySelector(`[name="variant_${idx}_packagingCost"]`)?.value || '';
+            const laborCost = document.querySelector(`[name="variant_${idx}_laborCost"]`)?.value || '';
+            const markupPercent = document.querySelector(`[name="variant_${idx}_markupPercent"]`)?.value || '';
+            currentVariants.push({ name, size, price, recipe: { packagingCost: parseFloat(packagingCost) || 0, laborCost: parseFloat(laborCost) || 0, markupPercent: parseFloat(markupPercent) || 40 } });
+        });
+        
+        // Rebuild with correct category template
+        this.variantCounter = 0;
+        variantsList.innerHTML = currentVariants.map((v, idx) => 
+            this.getVariantHTML(idx, v, mainCategory)
+        ).join('');
     },
     
     // Called when the Enable/Disable checkbox changes
@@ -244,7 +300,7 @@ const Products = {
             const stockInfo = this.getProductStock(product.id);
             
             // Get main category
-            const mainCat = product.mainCategory || this.getMainCategory(product.category);
+            const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
             const mainCatBadge = mainCat === 'bread' 
                 ? '<span style="font-size:0.7rem;padding:2px 6px;background:#FFF3E0;color:#E65100;border-radius:10px;">🍞</span>'
                 : '<span style="font-size:0.7rem;padding:2px 6px;background:#E3F2FD;color:#1565C0;border-radius:10px;">🥤</span>';
@@ -475,6 +531,12 @@ const Products = {
         this.fillingCounter = 0;
         this.toppingCounter = 0;
         
+        // Fix mainCategory if missing or wrong for drinks products
+        const correctMainCat = this.getMainCategory(product.category);
+        if (product.mainCategory !== correctMainCat) {
+            product.mainCategory = correctMainCat;
+        }
+        
         Modal.open({
             title: 'Edit Product',
             content: this.getFormHTML(product),
@@ -483,6 +545,15 @@ const Products = {
             onSave: () => this.save(id)
         });
         this.setupCostCalculation();
+        
+        // After modal opens, apply drinks-specific UI if needed
+        const isDrinks = correctMainCat === 'drinks';
+        if (isDrinks) {
+            const baseBreadSection = document.getElementById('baseBreadSection');
+            if (baseBreadSection) baseBreadSection.style.display = 'none';
+            const variantsToggle = document.getElementById('variantsToggleSection');
+            if (variantsToggle) variantsToggle.style.display = 'none';
+        }
     },
 
     async view(id) {
@@ -506,8 +577,8 @@ const Products = {
         const fillings = product.fillings || (product.fillingRecipeId ? [{recipeId: product.fillingRecipeId, weight: product.portioning?.fillingWeight || 0}] : []);
         const toppings = product.toppings || (product.toppingRecipeId ? [{recipeId: product.toppingRecipeId, weight: product.portioning?.toppingWeight || 0}] : []);
         
-        // Get current main category (derive from subcategory if not set)
-        const currentMainCat = product.mainCategory || this.getMainCategory(product.category);
+        // Get current main category - ALWAYS derive from subcategory to ensure correctness
+        const currentMainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
         
         // Group subcategories by main category
         const breadCategories = this.defaultCategories.filter(c => c.mainCategory === 'bread');
@@ -569,7 +640,7 @@ const Products = {
                 </div>
                 
                 <!-- VARIANTS TOGGLE -->
-                <div style="background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #2196F3;">
+                <div id="variantsToggleSection" style="background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #2196F3; ${currentMainCat === 'drinks' ? 'display:none;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <h4 style="margin: 0; color: #1565C0;">🏷️ Product Variants</h4>
@@ -578,7 +649,7 @@ const Products = {
                             </p>
                         </div>
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: white; padding: 8px 16px; border-radius: 8px;">
-                            <input type="checkbox" id="hasVariantsCheckbox" ${product.variants && product.variants.length > 0 ? 'checked' : ''} 
+                            <input type="checkbox" id="hasVariantsCheckbox" ${(product.variants && product.variants.length > 0) || currentMainCat === 'drinks' ? 'checked' : ''} 
                                    onchange="Products.toggleVariantMode()" style="width: 18px; height: 18px;">
                             <span style="font-weight: 600; color: #1565C0;">Enable</span>
                         </label>
@@ -586,7 +657,7 @@ const Products = {
                 </div>
 
                 <!-- BASE BREAD (JIT Finishing) -->
-                <div style="background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #FFC107;">
+                <div id="baseBreadSection" style="background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #FFC107; ${currentMainCat === 'drinks' ? 'display:none;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <h4 style="margin: 0; color: #F57C00;">🍞 Base Bread (JIT Finishing)</h4>
@@ -604,7 +675,7 @@ const Products = {
                 </div>
                 
                 <!-- SINGLE RECIPE MODE (default - no variants) -->
-                <div id="singleRecipeMode" style="display: ${product.variants && product.variants.length > 0 ? 'none' : 'block'};">
+                <div id="singleRecipeMode" style="display: ${(product.variants && product.variants.length > 0) || currentMainCat === 'drinks' ? 'none' : 'block'};">
                 
                 <h4 style="margin: 16px 0 8px;">🥖 Dough Recipe *</h4>
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
@@ -783,9 +854,9 @@ const Products = {
                 </div><!-- END singleRecipeMode -->
                 
                 <!-- VARIANTS MODE (multiple recipes) -->
-                <div id="variantsMode" style="display: ${product.variants && product.variants.length > 0 ? 'block' : 'none'};">
+                <div id="variantsMode" style="display: ${(product.variants && product.variants.length > 0) || currentMainCat === 'drinks' ? 'block' : 'none'};">
                     <div id="variantsList">
-                        ${product.variants && product.variants.length > 0 ? product.variants.map((v, idx) => this.getVariantHTML(idx, v, currentMainCat)).join('') : ''}
+                        ${product.variants && product.variants.length > 0 ? product.variants.map((v, idx) => this.getVariantHTML(idx, v, currentMainCat)).join('') : (currentMainCat === 'drinks' ? this._getDrinkDefaultVariantsHTML() : '')}
                     </div>
                     <button type="button" class="btn" onclick="Products.addVariant()" 
                             style="background: #2196F3; color: white; margin-top: 12px; width: 100%;">
@@ -890,6 +961,17 @@ const Products = {
     // ========== VARIANT FUNCTIONS ==========
     variantCounter: 0,
     
+    // Generate default drink variant HTML (Tall/Grande/Venti) for new products
+    _getDrinkDefaultVariantsHTML() {
+        const drinkSizes = [
+            { name: 'Tall', size: '12oz', recipe: { cupSize: 12, packagingCost: 5, laborCost: 1, markupPercent: 40 } },
+            { name: 'Grande', size: '16oz', recipe: { cupSize: 16, packagingCost: 6, laborCost: 1, markupPercent: 40 } },
+            { name: 'Venti', size: '22oz', recipe: { cupSize: 22, packagingCost: 7, laborCost: 1, markupPercent: 40 } }
+        ];
+        this.variantCounter = 0;
+        return drinkSizes.map((v, idx) => this.getVariantHTML(idx, v, 'drinks')).join('');
+    },
+    
     // Toggle between single recipe mode and variants mode
     toggleVariantMode() {
         const checkbox = document.getElementById('hasVariantsCheckbox');
@@ -900,11 +982,28 @@ const Products = {
             singleMode.style.display = 'none';
             variantsMode.style.display = 'block';
             
-            // If no variants exist, create the first one
+            // If no variants exist, create initial ones
             const variantsList = document.getElementById('variantsList');
             if (!variantsList.querySelector('.variant-section')) {
                 this.variantCounter = 0;
-                variantsList.innerHTML = this.getVariantHTML(0, {});
+                
+                // Check if drinks category - pre-populate Tall/Grande/Venti
+                const categorySelect = document.getElementById('categorySelect');
+                const selectedCategory = categorySelect?.value || 'donut';
+                const mainCat = this.getMainCategory(selectedCategory);
+                
+                if (mainCat === 'drinks') {
+                    const drinkSizes = [
+                        { name: 'Tall', size: '12oz', recipe: { cupSize: 12, packagingCost: 5, laborCost: 1, markupPercent: 40 } },
+                        { name: 'Grande', size: '16oz', recipe: { cupSize: 16, packagingCost: 6, laborCost: 1, markupPercent: 40 } },
+                        { name: 'Venti', size: '22oz', recipe: { cupSize: 22, packagingCost: 7, laborCost: 1, markupPercent: 40 } }
+                    ];
+                    variantsList.innerHTML = drinkSizes.map((v, idx) => 
+                        this.getVariantHTML(idx, v, 'drinks')
+                    ).join('');
+                } else {
+                    variantsList.innerHTML = this.getVariantHTML(0, {});
+                }
             }
         } else {
             singleMode.style.display = 'block';
@@ -1465,7 +1564,7 @@ const Products = {
         const shopStatus = this.getShopStatus(product);
         
         // Get main category
-        const mainCat = product.mainCategory || this.getMainCategory(product.category);
+        const mainCat = this.getMainCategory(product.category) || product.mainCategory || 'bread';
         const isDrinks = mainCat === 'drinks';
         
         // Check for variants
@@ -1739,7 +1838,7 @@ const Products = {
             data = {
                 name: formData.get('name'),
                 category: formData.get('category'),
-                mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                mainCategory: this.getMainCategory(formData.get('category')) || formData.get('mainCategory') || 'bread',
                 baseBreadId: formData.get('baseBreadId') || null,
                 // Store first variant's recipe as the "base" recipe for backward compatibility
                 doughRecipeId: variants[0].recipe?.doughRecipeId || '',
@@ -1799,7 +1898,7 @@ const Products = {
             data = {
                 name: formData.get('name'),
                 category: formData.get('category'),
-                mainCategory: formData.get('mainCategory') || this.getMainCategory(formData.get('category')),
+                mainCategory: this.getMainCategory(formData.get('category')) || formData.get('mainCategory') || 'bread',
                 baseBreadId: formData.get('baseBreadId') || null,
                 doughRecipeId: formData.get('doughRecipeId'),
                 fillings,
