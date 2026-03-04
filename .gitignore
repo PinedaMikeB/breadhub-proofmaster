@@ -1,0 +1,4 @@
+.DS_Store
+node_modules/
+api-server/.env
+api-server/firebase-service-account.json
