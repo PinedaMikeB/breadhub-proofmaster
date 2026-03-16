@@ -176,6 +176,16 @@ service cloud.firestore {
       allow write: if canOperate() || posEmergencyAccess();
     }
 
+    match /dailyBaseInventory/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
+    match /finishingLogs/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
     match /dailyWastage/{docId} {
       allow read: if canViewReports();
       allow write: if canOperate();
