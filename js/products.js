@@ -234,32 +234,49 @@ const Products = {
         try {
             const stored = await DB.getAll('productCategories');
             
-            // Check if we need to migrate to new categories
+            // Check for old categories that need migration
             const hasOldCategories = stored.some(c => ['sweet-bread', 'savory-bread', 'pastry', 'roll'].includes(c.value));
-            const hasAllNewCategories = this.defaultCategories.every(dc => 
-                stored.some(c => c.value === dc.value)
-            );
             
-            if (hasOldCategories || !hasAllNewCategories) {
-                // Migrate to new unified categories
-                console.log('Migrating to unified categories...');
-                
-                // Delete old categories
+            if (hasOldCategories) {
+                // Full migration: delete old, add all defaults
+                console.log('Migrating old categories...');
                 for (const cat of stored) {
                     await DB.delete('productCategories', cat.id);
                 }
-                
-                // Add new unified categories
                 for (const cat of this.defaultCategories) {
                     await DB.add('productCategories', cat);
                 }
-                
                 this.categories = this.defaultCategories.map(c => c.value);
-                Toast.success('Categories updated to match website!');
-            } else if (stored && stored.length > 0) {
+                Toast.success('Categories updated!');
+                return;
+            }
+            
+            if (stored && stored.length > 0) {
+                // Add any missing default categories (e.g., new bundle categories)
+                for (const dc of this.defaultCategories) {
+                    if (!stored.some(c => c.value === dc.value)) {
+                        console.log('Adding missing category:', dc.value);
+                        await DB.add('productCategories', dc);
+                        stored.push(dc);
+                    }
+                }
+                
+                // Load custom categories from Firebase into runtime array
+                for (const sc of stored) {
+                    if (!this.defaultCategories.some(dc => dc.value === sc.value)) {
+                        console.log('Loading custom category:', sc.value);
+                        this.defaultCategories.push({
+                            value: sc.value,
+                            label: sc.label || sc.value,
+                            emoji: sc.emoji || '📦',
+                            mainCategory: sc.mainCategory || 'bread'
+                        });
+                    }
+                }
+                
                 this.categories = stored.map(c => c.value);
             } else {
-                // Initialize with defaults
+                // First run — initialize with defaults
                 this.categories = this.defaultCategories.map(c => c.value);
                 for (const cat of this.defaultCategories) {
                     await DB.add('productCategories', cat);
@@ -507,31 +524,164 @@ const Products = {
 
     // Categories Management
     showCategoriesModal() {
-        const catList = this.defaultCategories.map(cat => `
-            <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 8px;">
-                <span style="font-size: 1.3rem;">${cat.emoji}</span>
-                <span style="flex: 1;">${cat.label}</span>
-                <span style="color: var(--text-secondary); font-size: 0.8rem;">${cat.value}</span>
-            </div>
-        `).join('');
+        this._renderCategoriesModal();
+    },
+    
+    _renderCategoriesModal() {
+        // Group by main category for display
+        const groups = [
+            { key: 'bread', label: '🍞 Bread & Pastries', color: '#FFF3E0', textColor: '#E65100' },
+            { key: 'drinks', label: '🥤 Drinks & Beverages', color: '#E3F2FD', textColor: '#1565C0' },
+            { key: 'bundle', label: '🎁 Bundles & Promos', color: '#F3E5F5', textColor: '#7B1FA2' }
+        ];
+        
+        const isCustom = (cat) => !['donut','savory','loaf','cookies','cinnamon-rolls','classic-filipino','roti','cakes','pandesal','desserts','drinks','coffee','non-coffee','bundle','meal-bundle','promo-bundle'].includes(cat.value);
+        
+        let catListHTML = '';
+        groups.forEach(g => {
+            const cats = this.defaultCategories.filter(c => c.mainCategory === g.key);
+            if (cats.length === 0) return;
+            catListHTML += `<div style="background: ${g.color}; padding: 8px 12px; border-radius: 8px; margin: 12px 0 6px; font-weight: 600; color: ${g.textColor}; font-size: 0.9rem;">${g.label}</div>`;
+            cats.forEach(cat => {
+                const custom = isCustom(cat);
+                catListHTML += `
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 4px;">
+                        <span style="font-size: 1.2rem;">${cat.emoji}</span>
+                        <span style="flex: 1;">${cat.label}</span>
+                        <span style="color: var(--text-secondary); font-size: 0.75rem;">${cat.value}</span>
+                        ${custom ? `<button type="button" onclick="Products.removeCategory('${cat.value}')" style="border:none;background:#FFEBEE;color:#C62828;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8rem;">✕</button>` : ''}
+                    </div>`;
+            });
+        });
+        
+        // Also show any uncategorized custom ones
+        const ungrouped = this.defaultCategories.filter(c => !['bread','drinks','bundle'].includes(c.mainCategory));
+        if (ungrouped.length > 0) {
+            catListHTML += `<div style="background: #F5F5F5; padding: 8px 12px; border-radius: 8px; margin: 12px 0 6px; font-weight: 600; color: #666; font-size: 0.9rem;">📦 Other</div>`;
+            ungrouped.forEach(cat => {
+                catListHTML += `
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--bg-input); border-radius: 6px; margin-bottom: 4px;">
+                        <span style="font-size: 1.2rem;">${cat.emoji}</span>
+                        <span style="flex: 1;">${cat.label}</span>
+                        <span style="color: var(--text-secondary); font-size: 0.75rem;">${cat.value}</span>
+                        <button type="button" onclick="Products.removeCategory('${cat.value}')" style="border:none;background:#FFEBEE;color:#C62828;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8rem;">✕</button>
+                    </div>`;
+            });
+        }
         
         Modal.open({
-            title: '🏷️ Product Categories (Synced with Website)',
+            title: '🏷️ Product Categories',
             content: `
                 <div style="margin-bottom: 16px;">
-                    <p style="color: var(--text-secondary); margin-bottom: 12px;">
-                        These 13 categories are synchronized with breadhub.shop website.
+                    <p style="color: var(--text-secondary); margin-bottom: 8px;">
+                        ${this.defaultCategories.length} categories synced with POS & Website.
                     </p>
-                    ${catList}
+                    <div id="categoriesList">${catListHTML}</div>
                 </div>
-                <div style="background: #E8F5E9; padding: 12px; border-radius: 8px;">
-                    <strong>✅ Categories are synced!</strong><br>
-                    <small>Both ProofMaster and Website use the same category system.</small>
+                
+                <!-- ADD CATEGORY FORM -->
+                <div style="background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); padding: 16px; border-radius: 12px; border: 2px solid #4CAF50;">
+                    <h4 style="margin: 0 0 12px; color: #2E7D32;">➕ Add New Category</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-bottom: 8px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:0.8rem;">Emoji</label>
+                            <input type="text" id="newCatEmoji" class="form-input" value="📦" placeholder="📦" style="font-size:1.3rem;text-align:center;">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:0.8rem;">Category Name *</label>
+                            <input type="text" id="newCatLabel" class="form-input" placeholder="e.g., Packaging, Add-ons">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin:0 0 12px;">
+                        <label style="font-size:0.8rem;">Parent Group *</label>
+                        <select id="newCatParent" class="form-select">
+                            <option value="bread">🍞 Bread & Pastries</option>
+                            <option value="drinks">🥤 Drinks & Beverages</option>
+                            <option value="bundle">🎁 Bundles & Promos</option>
+                        </select>
+                    </div>
+                    <button type="button" onclick="Products.addNewCategory()" class="btn" 
+                            style="background: #4CAF50; color: white; width: 100%; font-weight: bold;">
+                        ➕ Add Category
+                    </button>
                 </div>
             `,
             showFooter: false,
-            width: '500px'
+            width: '520px'
         });
+    },
+    
+    async addNewCategory() {
+        const emoji = document.getElementById('newCatEmoji')?.value?.trim() || '📦';
+        const label = document.getElementById('newCatLabel')?.value?.trim();
+        const mainCategory = document.getElementById('newCatParent')?.value || 'bread';
+        
+        if (!label) {
+            Toast.error('Please enter a category name');
+            return;
+        }
+        
+        // Generate value (slug) from label
+        const value = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        
+        // Check for duplicates
+        if (this.defaultCategories.some(c => c.value === value)) {
+            Toast.error('Category "' + label + '" already exists');
+            return;
+        }
+        
+        const newCat = { value, label, emoji, mainCategory };
+        
+        // Add to runtime array
+        this.defaultCategories.push(newCat);
+        
+        // Save to Firebase
+        try {
+            await DB.add('productCategories', newCat);
+            this.categories.push(value);
+            Toast.success('Category "' + label + '" added!');
+            
+            // Re-render the modal to show new category
+            Modal.close();
+            this._renderCategoriesModal();
+        } catch (err) {
+            console.error('Error adding category:', err);
+            // Remove from array if save failed
+            this.defaultCategories.pop();
+            Toast.error('Failed to save category');
+        }
+    },
+    
+    async removeCategory(value) {
+        const cat = this.defaultCategories.find(c => c.value === value);
+        if (!cat) return;
+        
+        // Check if any products use this category
+        const productsUsing = this.data.filter(p => p.category === value);
+        if (productsUsing.length > 0) {
+            Toast.error('Cannot delete — ' + productsUsing.length + ' product(s) use this category');
+            return;
+        }
+        
+        if (!confirm('Delete category "' + cat.label + '"?')) return;
+        
+        try {
+            // Remove from Firebase
+            const stored = await DB.getAll('productCategories');
+            const dbCat = stored.find(c => c.value === value);
+            if (dbCat) await DB.delete('productCategories', dbCat.id);
+            
+            // Remove from runtime
+            this.defaultCategories = this.defaultCategories.filter(c => c.value !== value);
+            this.categories = this.categories.filter(c => c !== value);
+            
+            Toast.success('Category removed');
+            Modal.close();
+            this._renderCategoriesModal();
+        } catch (err) {
+            console.error('Error removing category:', err);
+            Toast.error('Failed to remove category');
+        }
     },
     
     // ========== LAUNCH WEBSITE ADMIN ==========
