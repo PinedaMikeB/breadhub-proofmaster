@@ -1,0 +1,274 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userData() {
+      return userDoc().data;
+    }
+
+    function profileExists() {
+      return signedIn() && exists(userDocPath());
+    }
+
+    function isApproved() {
+      return profileExists() && userData().approved == true;
+    }
+
+    function hasRole(role) {
+      return isApproved() && userData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isManager() {
+      return hasRole('manager');
+    }
+
+    function isPurchaser() {
+      return hasRole('purchaser');
+    }
+
+    function isBaker() {
+      return hasRole('baker');
+    }
+
+    function canOperate() {
+      return isAdmin() || isManager() || isBaker();
+    }
+
+    function canManagePurchasing() {
+      return isAdmin() || isManager() || isPurchaser();
+    }
+
+    function canViewReports() {
+      return isAdmin() || isManager() || isPurchaser() || isBaker();
+    }
+
+    // Temporary emergency compatibility for the legacy POS app.
+    // The POS still uses client-side PIN auth and direct Firestore access.
+    function posEmergencyAccess() {
+      return true;
+    }
+
+    function isOwnerDocument(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function creatingOwnProfile() {
+      return signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'baker'
+        && request.resource.data.approved == false;
+    }
+
+    match /users/{userId} {
+      allow create: if creatingOwnProfile();
+      allow read: if isOwnerDocument(userId) || isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    match /suppliers/{docId} {
+      allow read: if isApproved();
+      allow write: if canManagePurchasing();
+    }
+
+    match /ingredientPrices/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /doughs/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /toppings/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /fillings/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /ingredients/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
+    match /packagingMaterials/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
+    match /doughRecipes/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /toppingRecipes/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /fillingRecipes/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /baseBreads/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /products/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
+    match /productCategories/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if (isAdmin() || isManager()) || posEmergencyAccess();
+    }
+
+    match /purchaseRequests/{docId} {
+      allow read: if isApproved();
+      allow write: if canManagePurchasing();
+    }
+
+    match /inventory/{docId} {
+      allow read: if isApproved();
+      allow write: if canOperate();
+    }
+
+    match /dailyInventory/{docId} {
+      allow read: if isApproved() || posEmergencyAccess();
+      allow write: if canOperate() || posEmergencyAccess();
+    }
+
+    match /productionRuns/{docId} {
+      allow read: if canViewReports();
+      allow write: if canOperate();
+    }
+
+    match /productionBatches/{docId} {
+      allow read: if canViewReports();
+      allow write: if canOperate();
+    }
+
+    match /stockMovements/{docId} {
+      allow read: if isAdmin() || isManager() || posEmergencyAccess();
+      allow write: if canOperate() || posEmergencyAccess();
+    }
+
+    match /dailyWastage/{docId} {
+      allow read: if canViewReports();
+      allow write: if canOperate();
+    }
+
+    match /_health/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /fraudDetections/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /fraudAlerts/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Legacy POS collections using PIN-based auth and direct Firestore access.
+    match /staff/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /settings/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /authorizedDevices/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /shifts/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /sales/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /pendingPurchases/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /discountPresets/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /salesImports/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /productMapping/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /inventoryDeductions/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /shiftInventory/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /notifications/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /emailQueue/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /orders/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /appConfig/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /appDevices/{docId} {
+      allow read, write: if posEmergencyAccess();
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if posEmergencyAccess();
+
+      match /messages/{messageId} {
+        allow read, write: if posEmergencyAccess();
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
