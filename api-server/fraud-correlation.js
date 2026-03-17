@@ -5,7 +5,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULTS = {
   shinobiContainer: process.env.SHINOBI_CONTAINER || 'shinobi',
-  shinobiBaseUrl: process.env.SHINOBI_BASE_URL || 'http://127.0.0.1:8080',
+  shinobiBaseUrl: process.env.SHINOBI_BASE_URL || 'http://192.168.51.226:8080',
   eventLookbackHours: Math.max(parseInt(process.env.FRAUD_EVENT_LOOKBACK_HOURS || '12', 10), 1),
   eventLimit: Math.max(parseInt(process.env.FRAUD_EVENT_LIMIT || '1000', 10), 50),
   saleMatchWindowSeconds: Math.max(parseInt(process.env.FRAUD_SALE_MATCH_WINDOW_SECONDS || '120', 10), 30),

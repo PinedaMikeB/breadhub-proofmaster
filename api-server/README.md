@@ -36,7 +36,7 @@ The first correlation pass reads:
 Assumptions for the current starter writer:
 
 - the local Shinobi container is named `shinobi` unless `SHINOBI_CONTAINER` is set
-- clip links use `SHINOBI_BASE_URL` and default to `http://127.0.0.1:8080`
+- clip links use `SHINOBI_BASE_URL` and default to `http://192.168.51.226:8080`
 - POS sales live in Firestore collection `sales`
 - Shinobi event region tags come from `details.matrices[].tag`
 

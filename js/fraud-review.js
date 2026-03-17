@@ -131,7 +131,7 @@ const FraudReview = {
                 evidenceSummary: 'Drawer motion detected with cashier presence but no customer region and no POS transaction in the review window.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 14:02',
-                clipUrl: 'http://127.0.0.1:8080',
+                clipUrl: 'http://192.168.51.226:8080',
                 source: 'sample'
             },
             {
@@ -151,7 +151,7 @@ const FraudReview = {
                 evidenceSummary: 'Customer and handoff activity overlapped, but no sale was found and no drawer event was recorded.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 13:39',
-                clipUrl: 'http://127.0.0.1:8080',
+                clipUrl: 'http://192.168.51.226:8080',
                 source: 'sample'
             },
             {
@@ -171,7 +171,7 @@ const FraudReview = {
                 evidenceSummary: 'All expected motion regions fired, but the sale amount was unusually low for the interaction duration and drawer activity pattern.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 13:13',
-                clipUrl: 'http://127.0.0.1:8080',
+                clipUrl: 'http://192.168.51.226:8080',
                 source: 'sample'
             }
         ];
