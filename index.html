@@ -218,8 +218,12 @@
                     </ul>
                 </div>
                 
-                <div class="nav-section" data-min-role="admin">
-                    <span class="nav-label">Admin</span>
+                <div class="nav-section nav-section-collapsible is-collapsed" data-min-role="admin" data-protected-section="fraudAdmin">
+                    <button type="button" class="nav-section-toggle" data-section-toggle="fraudAdmin" aria-expanded="false">
+                        <span class="nav-label">Admin</span>
+                        <span class="nav-section-meta">Fraud Password</span>
+                        <span class="nav-section-caret">▾</span>
+                    </button>
                     <ul class="nav-menu">
                         <li><a href="#" data-view="fraudDetection" class="nav-link">
                             <span class="nav-icon">🛡️</span> Fraud Review

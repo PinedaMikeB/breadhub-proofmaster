@@ -161,6 +161,7 @@ const Auth = {
         document.getElementById('loginScreen').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
         this.setAuthPanel('loginForm');
+        sessionStorage.removeItem('proofmaster.fraudAdminUnlocked');
     },
 
     showApp() {
@@ -273,6 +274,10 @@ const Auth = {
                 .some((link) => link.style.display !== 'none');
             section.style.display = hasVisibleLink ? '' : 'none';
         });
+
+        if (typeof App !== 'undefined' && App.syncProtectedNavState) {
+            App.syncProtectedNavState();
+        }
     },
 
     updateActionVisibility() {

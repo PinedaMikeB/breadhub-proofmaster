@@ -89,6 +89,11 @@ const serializeIncident = (doc) => {
     evidenceSummary: row.evidenceSummary || '',
     cameraName: row.cameraName || 'Cashier Camera',
     shinobiMonitorId: row.shinobiMonitorId || row.monitorId || null,
+    clipLabel: row.clipLabel || null,
+    clipUrl: row.clipUrl || null,
+    clipPath: row.clipPath || null,
+    clipStart: toIso(row.clipStart),
+    clipEnd: toIso(row.clipEnd),
     source: row.source || 'correlation-engine',
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt)

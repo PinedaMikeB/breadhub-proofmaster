@@ -5,6 +5,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULTS = {
   shinobiContainer: process.env.SHINOBI_CONTAINER || 'shinobi',
+  shinobiBaseUrl: process.env.SHINOBI_BASE_URL || 'http://127.0.0.1:8080',
   eventLookbackHours: Math.max(parseInt(process.env.FRAUD_EVENT_LOOKBACK_HOURS || '12', 10), 1),
   eventLimit: Math.max(parseInt(process.env.FRAUD_EVENT_LIMIT || '1000', 10), 50),
   saleMatchWindowSeconds: Math.max(parseInt(process.env.FRAUD_SALE_MATCH_WINDOW_SECONDS || '120', 10), 30),
@@ -42,6 +43,8 @@ const slugify = (value) => String(value || '')
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '')
   .slice(0, 80);
+
+const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '');
 
 const buildDateKeys = (hours) => {
   const keys = new Set();
@@ -110,6 +113,48 @@ const parseEventRow = (columns) => {
   };
 };
 
+const formatShinobiVideoFilename = (timestamp, extension = 'mp4') => {
+  const date = toDate(timestamp);
+  if (!date) return null;
+
+  const [isoDate, isoTime] = date.toISOString().split('T');
+  const timePart = (isoTime || '').split('.')[0].replace(/:/g, '-');
+  return `${isoDate}T${timePart}.${extension}`;
+};
+
+const parseVideoRow = (columns, baseUrl = DEFAULTS.shinobiBaseUrl) => {
+  const [mid, ke, time, end, ext, detailsRaw] = columns;
+  const start = toDate(time);
+  const finish = toDate(end);
+  if (!start || !finish || !ke || !mid) return null;
+
+  let details = {};
+  try {
+    details = detailsRaw ? JSON.parse(detailsRaw) : {};
+  } catch (error) {
+    details = {};
+  }
+
+  const filename = formatShinobiVideoFilename(start, ext || 'mp4');
+  const normalizedBaseUrl = trimTrailingSlash(baseUrl);
+  const clipPath = filename ? `/videos/${ke}/${mid}/${filename}` : null;
+
+  return {
+    id: `${mid}-${start.toISOString()}`,
+    ke,
+    mid,
+    start,
+    end: finish,
+    startIso: start.toISOString(),
+    endIso: finish.toISOString(),
+    filename,
+    extension: ext || 'mp4',
+    clipPath,
+    clipUrl: clipPath ? `${normalizedBaseUrl}${clipPath}` : null,
+    details
+  };
+};
+
 const createCluster = (event) => ({
   ke: event.ke,
   mid: event.mid,
@@ -174,6 +219,26 @@ const findClosestSale = (cluster, sales, saleMatchWindowSeconds) => {
   return bestMatch ? bestMatch.sale : null;
 };
 
+const findBestVideo = (cluster, videos) => {
+  const incidentAt = cluster.incidentAt.getTime();
+  const sameMonitorVideos = videos.filter((video) => video.mid === cluster.mid && video.ke === cluster.ke);
+  const containingVideo = sameMonitorVideos.find((video) => (
+    video.start.getTime() <= incidentAt && incidentAt <= video.end.getTime()
+  ));
+
+  if (containingVideo) return containingVideo;
+
+  let nearestVideo = null;
+  for (const video of sameMonitorVideos) {
+    const diff = Math.abs(video.start.getTime() - incidentAt);
+    if (!nearestVideo || diff < nearestVideo.diff) {
+      nearestVideo = { video, diff };
+    }
+  }
+
+  return nearestVideo ? nearestVideo.video : null;
+};
+
 const classifyCluster = (cluster, matchedSale, customerInteractionSeconds) => {
   const tags = new Set(cluster.regionTags);
   const has = (tag) => tags.has(tag);
@@ -217,7 +282,7 @@ const classifyCluster = (cluster, matchedSale, customerInteractionSeconds) => {
   return null;
 };
 
-const buildIncidentDoc = (cluster, matchedSale, classification) => {
+const buildIncidentDoc = (cluster, matchedSale, matchedVideo, classification) => {
   const saleAmount = matchedSale ? Number(matchedSale.total || 0) : null;
   const cashierName = matchedSale?.cashierName || matchedSale?.cashierId || 'Unknown';
   return {
@@ -237,13 +302,19 @@ const buildIncidentDoc = (cluster, matchedSale, classification) => {
     evidenceSummary: classification.evidenceSummary,
     cameraName: 'Cashier Camera',
     shinobiMonitorId: cluster.mid,
+    clipLabel: matchedVideo ? `Open clip ${matchedVideo.filename}` : 'Shinobi clip pending',
+    clipUrl: matchedVideo?.clipUrl || null,
+    clipPath: matchedVideo?.clipPath || null,
+    clipStart: matchedVideo?.startIso || null,
+    clipEnd: matchedVideo?.endIso || null,
     source: 'pos-shinobi-correlation',
     correlationMeta: {
       eventCount: cluster.events.length,
       peakConfidence: cluster.peakConfidence,
       matchedSaleTimestamp: matchedSale?.timestampIso || null,
       matchedSalePaymentMethod: matchedSale?.paymentMethod || null,
-      matchedSaleItemCount: matchedSale?.items?.length || 0
+      matchedSaleItemCount: matchedSale?.items?.length || 0,
+      clipFilename: matchedVideo?.filename || null
     },
     updatedAt: new Date().toISOString()
   };
@@ -292,15 +363,48 @@ export async function fetchRecentShinobiEvents(options = {}) {
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
+export async function fetchRecentShinobiVideos(options = {}) {
+  const hours = escapeSqlInt(options.hours, DEFAULTS.eventLookbackHours);
+  const limit = escapeSqlInt(options.limit, DEFAULTS.eventLimit);
+  const container = options.shinobiContainer || DEFAULTS.shinobiContainer;
+  const baseUrl = options.shinobiBaseUrl || DEFAULTS.shinobiBaseUrl;
+
+  const { stdout } = await execFileAsync('docker', [
+    'exec',
+    container,
+    'mysql',
+    '-u',
+    'root',
+    '-N',
+    '-B',
+    '-e',
+    `SELECT mid,ke,time,end,ext,details FROM ccio.Videos WHERE time >= DATE_SUB(NOW(), INTERVAL ${hours} HOUR) ORDER BY time DESC LIMIT ${limit};`
+  ], {
+    windowsHide: true,
+    maxBuffer: 5 * 1024 * 1024
+  });
+
+  return parseMysqlTsv(stdout)
+    .map((columns) => parseVideoRow(columns, baseUrl))
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+}
+
 export async function buildCorrelatedIncidents(db, options = {}) {
   const hours = escapeSqlInt(options.hours, DEFAULTS.eventLookbackHours);
   const clusterGapSeconds = escapeSqlInt(options.clusterGapSeconds, DEFAULTS.clusterGapSeconds);
   const saleMatchWindowSeconds = escapeSqlInt(options.saleMatchWindowSeconds, DEFAULTS.saleMatchWindowSeconds);
   const customerInteractionSeconds = escapeSqlInt(options.customerInteractionSeconds, DEFAULTS.customerInteractionSeconds);
 
-  const [sales, events] = await Promise.all([
+  const [sales, events, videos] = await Promise.all([
     fetchRecentSales(db, hours),
-    fetchRecentShinobiEvents({ hours, limit: options.eventLimit, shinobiContainer: options.shinobiContainer })
+    fetchRecentShinobiEvents({ hours, limit: options.eventLimit, shinobiContainer: options.shinobiContainer }),
+    fetchRecentShinobiVideos({
+      hours,
+      limit: options.videoLimit || options.eventLimit,
+      shinobiContainer: options.shinobiContainer,
+      shinobiBaseUrl: options.shinobiBaseUrl
+    })
   ]);
 
   const clusters = clusterEvents(events, clusterGapSeconds);
@@ -308,9 +412,10 @@ export async function buildCorrelatedIncidents(db, options = {}) {
 
   for (const cluster of clusters) {
     const matchedSale = findClosestSale(cluster, sales, saleMatchWindowSeconds);
+    const matchedVideo = findBestVideo(cluster, videos);
     const classification = classifyCluster(cluster, matchedSale, customerInteractionSeconds);
     if (!classification) continue;
-    const incident = buildIncidentDoc(cluster, matchedSale, classification);
+    const incident = buildIncidentDoc(cluster, matchedSale, matchedVideo, classification);
     incidents.push({
       id: buildIncidentId(incident),
       ...incident
@@ -328,6 +433,7 @@ export async function buildCorrelatedIncidents(db, options = {}) {
     sourceCounts: {
       sales: sales.length,
       events: events.length,
+      videos: videos.length,
       clusters: clusters.length
     },
     incidents

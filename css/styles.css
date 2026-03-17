@@ -166,6 +166,45 @@ a {
     opacity: 0.5;
 }
 
+.nav-section-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.nav-section-toggle .nav-label {
+    padding-right: 0;
+}
+
+.nav-section-meta {
+    margin-left: auto;
+    font-size: 0.68rem;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.nav-section-caret {
+    margin-right: var(--space-lg);
+    color: rgba(255,255,255,0.55);
+    transition: transform 0.2s ease;
+}
+
+.nav-section-collapsible.is-collapsed .nav-menu {
+    display: none;
+}
+
+.nav-section-collapsible:not(.is-collapsed) .nav-section-caret {
+    transform: rotate(180deg);
+}
+
 .nav-menu {
     list-style: none;
 }

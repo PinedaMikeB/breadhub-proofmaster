@@ -78,6 +78,10 @@ const FraudReview = {
             evidenceSummary: raw.evidenceSummary || 'No evidence summary recorded yet.',
             cameraName: raw.cameraName || 'Cashier Camera',
             clipLabel: raw.clipLabel || this.getClipLabel(raw),
+            clipUrl: raw.clipUrl || null,
+            clipPath: raw.clipPath || null,
+            clipStart: raw.clipStart || null,
+            clipEnd: raw.clipEnd || null,
             source: raw.source || 'correlation-engine'
         };
     },
@@ -100,6 +104,10 @@ const FraudReview = {
             evidenceSummary: raw.evidenceSummary || raw.message || 'Imported from legacy fraudAlerts collection.',
             cameraName: raw.cameraName || 'Cashier Camera',
             clipLabel: this.getClipLabel(raw),
+            clipUrl: raw.clipUrl || null,
+            clipPath: raw.clipPath || null,
+            clipStart: raw.clipStart || null,
+            clipEnd: raw.clipEnd || null,
             source: 'legacy-alerts'
         };
     },
@@ -123,6 +131,7 @@ const FraudReview = {
                 evidenceSummary: 'Drawer motion detected with cashier presence but no customer region and no POS transaction in the review window.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 14:02',
+                clipUrl: 'http://127.0.0.1:8080',
                 source: 'sample'
             },
             {
@@ -142,6 +151,7 @@ const FraudReview = {
                 evidenceSummary: 'Customer and handoff activity overlapped, but no sale was found and no drawer event was recorded.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 13:39',
+                clipUrl: 'http://127.0.0.1:8080',
                 source: 'sample'
             },
             {
@@ -161,6 +171,7 @@ const FraudReview = {
                 evidenceSummary: 'All expected motion regions fired, but the sale amount was unusually low for the interaction duration and drawer activity pattern.',
                 cameraName: 'Cashier Camera',
                 clipLabel: 'Review around 13:13',
+                clipUrl: 'http://127.0.0.1:8080',
                 source: 'sample'
             }
         ];
@@ -286,6 +297,10 @@ const FraudReview = {
   evidenceSummary,
   cameraName,
   shinobiMonitorId,
+  clipUrl,
+  clipPath,
+  clipStart,
+  clipEnd,
   createdAt,
   updatedAt
 }</div>
@@ -318,6 +333,13 @@ const FraudReview = {
                                     <div style="font-size:0.82rem;color:#5f6368;margin-top:4px;">
                                         ${this.escapeHtml(incident.cameraName)} | ${this.escapeHtml(incident.clipLabel)}
                                     </div>
+                                    ${incident.clipUrl ? `
+                                        <div style="margin-top:8px;">
+                                            <a href="${this.escapeHtml(incident.clipUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 10px;border-radius:999px;background:#E8F0FE;color:#1A73E8;font-size:0.8rem;font-weight:700;">
+                                                Preview Video
+                                            </a>
+                                        </div>
+                                    ` : ''}
                                 </td>
                                 <td>${this.renderSeverityBadge(incident.severity)}</td>
                                 <td>${this.renderStatusBadge(incident.status)}</td>

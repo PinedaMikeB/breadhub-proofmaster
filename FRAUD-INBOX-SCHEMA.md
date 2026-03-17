@@ -33,6 +33,10 @@ Each document should represent one reviewable incident window, not one raw motio
 
   cameraName: "Cashier Camera",
   shinobiMonitorId: "x0UNTvt8KV",
+  clipUrl: "http://127.0.0.1:8080/videos/breadhubmain/x0UNTvt8KV/2026-03-17T15-30-05.mp4",
+  clipPath: "/videos/breadhubmain/x0UNTvt8KV/2026-03-17T15-30-05.mp4",
+  clipStart: Timestamp,
+  clipEnd: Timestamp,
   source: "correlation-engine",
 
   createdAt: Timestamp,

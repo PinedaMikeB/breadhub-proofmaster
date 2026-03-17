@@ -4,6 +4,12 @@
 
 const App = {
     currentView: 'dashboard',
+    protectedSections: {
+        fraudAdmin: {
+            sessionKey: 'proofmaster.fraudAdminUnlocked',
+            passwordHash: 'b776f437373d8f110da74691107468fce2c6cb1fc7c0757963ef6b0fe49f8069'
+        }
+    },
 
     init() {
         console.log('Initializing BreadHub ProofMaster...');
@@ -19,6 +25,7 @@ const App = {
 
         Auth.init();
         this.setupEventListeners();
+        this.syncProtectedNavState();
         this.startClock();
 
         console.log('BreadHub ProofMaster initialized!');
@@ -73,6 +80,14 @@ const App = {
         if (newProdBtn) {
             newProdBtn.addEventListener('click', () => this.showView('production'));
         }
+
+        document.querySelectorAll('[data-section-toggle]').forEach((toggle) => {
+            toggle.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const sectionId = e.currentTarget.dataset.sectionToggle;
+                await this.toggleProtectedSection(sectionId);
+            });
+        });
     },
 
     getDefaultView() {
@@ -81,6 +96,12 @@ const App = {
     },
 
     showView(viewName, options = {}) {
+        const protectedSectionId = this.getProtectedSectionForView(viewName);
+        if (protectedSectionId && !options.skipProtectedSectionCheck && !this.isProtectedSectionUnlocked(protectedSectionId)) {
+            this.promptProtectedSectionUnlock(protectedSectionId, viewName);
+            return false;
+        }
+
         if (!Auth.canAccessView(viewName)) {
             if (!options.silent) {
                 Toast.error('You do not have permission to access this page');
@@ -101,6 +122,9 @@ const App = {
 
         this.currentView = viewName;
         this.closeMobileMenu();
+        if (protectedSectionId) {
+            this.setProtectedSectionCollapsed(protectedSectionId, false);
+        }
 
         document.querySelectorAll('.view').forEach((view) => view.classList.remove('active'));
         targetView.classList.add('active');
@@ -112,6 +136,114 @@ const App = {
         this.updateHeader(viewName);
         this.refreshView(viewName);
         return true;
+    },
+
+    getProtectedSectionConfig(sectionId) {
+        return this.protectedSections[sectionId] || null;
+    },
+
+    getProtectedSectionElement(sectionId) {
+        return document.querySelector(`.nav-section[data-protected-section="${sectionId}"]`);
+    },
+
+    getProtectedSectionForView(viewName) {
+        const link = document.querySelector(`.nav-link[data-view="${viewName}"]`);
+        const section = link?.closest('.nav-section[data-protected-section]');
+        return section?.dataset.protectedSection || null;
+    },
+
+    isProtectedSectionUnlocked(sectionId) {
+        const config = this.getProtectedSectionConfig(sectionId);
+        if (!config) return true;
+        return sessionStorage.getItem(config.sessionKey) === '1';
+    },
+
+    setProtectedSectionCollapsed(sectionId, collapsed) {
+        const section = this.getProtectedSectionElement(sectionId);
+        if (!section) return;
+
+        section.classList.toggle('is-collapsed', collapsed);
+
+        const toggle = section.querySelector('[data-section-toggle]');
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+    },
+
+    syncProtectedNavState() {
+        document.querySelectorAll('.nav-section[data-protected-section]').forEach((section) => {
+            const sectionId = section.dataset.protectedSection;
+            this.setProtectedSectionCollapsed(sectionId, true);
+        });
+    },
+
+    async toggleProtectedSection(sectionId) {
+        const section = this.getProtectedSectionElement(sectionId);
+        if (!section || section.style.display === 'none') return;
+
+        if (!this.isProtectedSectionUnlocked(sectionId)) {
+            await this.promptProtectedSectionUnlock(sectionId);
+            return;
+        }
+
+        const isCollapsed = section.classList.contains('is-collapsed');
+        this.setProtectedSectionCollapsed(sectionId, !isCollapsed);
+    },
+
+    async promptProtectedSectionUnlock(sectionId, targetView = null) {
+        const config = this.getProtectedSectionConfig(sectionId);
+        if (!config) return;
+
+        Modal.open({
+            title: 'Unlock Fraud Admin',
+            saveText: 'Unlock',
+            saveClass: 'btn-primary',
+            width: '460px',
+            content: `
+                <form id="fraudUnlockForm">
+                    <div class="form-group">
+                        <label>Fraud Password</label>
+                        <input type="password" id="fraudUnlockPassword" class="form-input" placeholder="Enter fraud password" autocomplete="current-password">
+                    </div>
+                    <p style="margin:0;color:var(--text-secondary);font-size:0.9rem;">
+                        This unlock lasts only for the current browser tab.
+                    </p>
+                </form>
+            `,
+            onSave: async () => {
+                const input = document.getElementById('fraudUnlockPassword');
+                const password = input?.value || '';
+                const isValid = await this.verifyProtectedSectionPassword(sectionId, password);
+
+                if (!isValid) {
+                    Toast.error('Incorrect fraud password');
+                    if (input) input.focus();
+                    return;
+                }
+
+                sessionStorage.setItem(config.sessionKey, '1');
+                this.setProtectedSectionCollapsed(sectionId, false);
+                Modal.close();
+                Toast.success('Fraud admin unlocked');
+
+                if (targetView) {
+                    this.showView(targetView, { skipProtectedSectionCheck: true });
+                }
+            }
+        });
+    },
+
+    async verifyProtectedSectionPassword(sectionId, password) {
+        const config = this.getProtectedSectionConfig(sectionId);
+        if (!config || !password || !window.crypto?.subtle) return false;
+
+        const encoded = new TextEncoder().encode(password);
+        const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+        const actualHash = Array.from(new Uint8Array(digest))
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('');
+
+        return actualHash === config.passwordHash;
     },
 
     updateHeader(viewName) {
