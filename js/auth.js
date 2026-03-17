@@ -1,25 +1,115 @@
 /**
- * BreadHub ProofMaster - Authentication Module
- * Handles signup, signin, signout, and user session
+ * BreadHub ProofMaster - Authentication + Authorization Module
+ * Handles signup, signin, signout, user sessions, and view permissions.
  */
 
 const Auth = {
     currentUser: null,
     userProfile: null,
-    
+
     // OWNER EMAIL - this email will always be admin
     ownerEmail: 'michael.marga@gmail.com',
-    
-    // Available roles
-    roles: {
-        admin: { name: 'Admin', level: 100, description: 'Full access to everything' },
-        manager: { name: 'Manager', level: 50, description: 'Manage recipes, products, view costs' },
-        purchaser: { name: 'Purchaser', level: 35, description: 'Handle purchase requests, manage suppliers' },
-        baker: { name: 'Baker', level: 20, description: 'Production runs, view recipes only' }
+
+    viewPermissions: {
+        dashboard: 'dashboard.view',
+        inventory: 'inventory.view',
+        production: 'production.view',
+        timers: 'timers.view',
+        suppliers: 'suppliers.view',
+        ingredients: 'ingredients.view',
+        packaging: 'packaging.view',
+        doughs: 'doughs.view',
+        toppings: 'toppings.view',
+        fillings: 'fillings.view',
+        baseBreads: 'baseBreads.view',
+        products: 'products.view',
+        finishingStation: 'finishingStation.view',
+        purchaseRequests: 'purchaseRequests.view',
+        costs: 'costs.view',
+        history: 'history.view',
+        inventoryReports: 'inventoryReports.view',
+        businessIntelligence: 'businessIntelligence.view',
+        users: 'users.manage',
+        fraudDetection: 'fraud.view'
     },
-    
+
+    // Available roles + centralized permission matrix
+    roles: {
+        admin: {
+            name: 'Admin',
+            level: 100,
+            description: 'Full access to operations, users, and future fraud tools',
+            permissions: ['*']
+        },
+        manager: {
+            name: 'Manager',
+            level: 50,
+            description: 'Operations, recipes, reports, and business intelligence',
+            permissions: [
+                'dashboard.view',
+                'inventory.view',
+                'inventory.manage',
+                'production.view',
+                'production.run',
+                'timers.view',
+                'suppliers.view',
+                'suppliers.manage',
+                'ingredients.view',
+                'ingredients.manage',
+                'packaging.view',
+                'packaging.manage',
+                'doughs.view',
+                'doughs.manage',
+                'toppings.view',
+                'toppings.manage',
+                'fillings.view',
+                'fillings.manage',
+                'baseBreads.view',
+                'baseBreads.manage',
+                'products.view',
+                'products.manage',
+                'finishingStation.view',
+                'finishingStation.use',
+                'purchaseRequests.view',
+                'purchaseRequests.manage',
+                'costs.view',
+                'history.view',
+                'inventoryReports.view',
+                'businessIntelligence.view'
+            ]
+        },
+        purchaser: {
+            name: 'Purchaser',
+            level: 35,
+            description: 'Purchase requests, suppliers, and purchasing support only',
+            permissions: [
+                'dashboard.view',
+                'inventory.view',
+                'suppliers.view',
+                'suppliers.manage',
+                'ingredients.view',
+                'packaging.view',
+                'purchaseRequests.view',
+                'purchaseRequests.manage',
+                'history.view'
+            ]
+        },
+        baker: {
+            name: 'Baker',
+            level: 20,
+            description: 'Production floor access without admin or analytics tools',
+            permissions: [
+                'dashboard.view',
+                'inventory.view',
+                'production.view',
+                'production.run',
+                'timers.view',
+                'history.view'
+            ]
+        }
+    },
+
     init() {
-        // Listen for auth state changes
         firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {
                 this.currentUser = user;
@@ -32,84 +122,90 @@ const Auth = {
             }
         });
     },
-    
+
     async loadUserProfile() {
         if (!this.currentUser) return;
-        
+
         try {
             const doc = await db.collection('users').doc(this.currentUser.uid).get();
-            if (doc.exists) {
-                this.userProfile = doc.data();
-            } else {
-                // First time user - should not happen if signup worked
-                console.warn('User profile not found');
-            }
+            this.userProfile = doc.exists ? doc.data() : null;
         } catch (error) {
             console.error('Error loading user profile:', error);
+            this.userProfile = null;
         }
     },
-    
+
     onSignedIn() {
-        // Hide login screen, show app
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'flex';
-        
-        // Update user display
-        this.updateUserDisplay();
-        
-        // Initialize app data
-        App.loadData();
-        
-        // Check if user is approved
-        if (this.userProfile && !this.userProfile.approved) {
-            Toast.warning('Your account is pending approval by admin');
+        if (!this.userProfile) {
+            this.showAccessState(
+                'Account Setup Incomplete',
+                'Your account is missing a user profile. Please contact an admin before accessing BreadHub ProofMaster.'
+            );
+            return;
         }
+
+        if (!this.isApproved()) {
+            this.showAccessState(
+                'Waiting for Approval',
+                'Your account has been created but is not approved yet. An admin must approve it before you can enter the app.'
+            );
+            return;
+        }
+
+        this.showApp();
+        this.updateUserDisplay();
+        App.loadData();
     },
-    
+
     onSignedOut() {
-        // Show login screen, hide app
         document.getElementById('loginScreen').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
+        this.setAuthPanel('loginForm');
     },
-    
-    updateUserDisplay() {
-        const userNameEl = document.getElementById('currentUserName');
-        const userRoleEl = document.getElementById('currentUserRole');
-        
-        if (userNameEl && this.userProfile) {
-            userNameEl.textContent = this.userProfile.displayName || this.currentUser.email;
-        }
-        if (userRoleEl && this.userProfile) {
-            const role = this.roles[this.userProfile.role] || this.roles.baker;
-            userRoleEl.textContent = role.name;
-        }
-        
-        // Update nav visibility based on role
-        this.updateNavVisibility();
+
+    showApp() {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
     },
-    
-    updateNavVisibility() {
-        const role = this.userProfile?.role || 'baker';
-        const level = this.roles[role]?.level || 0;
-        
-        // Hide admin-only items for non-admins
-        document.querySelectorAll('[data-min-role="admin"]').forEach(el => {
-            el.style.display = level >= 100 ? '' : 'none';
-        });
-        
-        // Hide manager+ items for bakers
-        document.querySelectorAll('[data-min-role="manager"]').forEach(el => {
-            el.style.display = level >= 50 ? '' : 'none';
+
+    showAccessState(title, message) {
+        const titleEl = document.getElementById('pendingApprovalTitle');
+        const messageEl = document.getElementById('pendingApprovalMessage');
+        const emailEl = document.getElementById('pendingApprovalEmail');
+
+        if (titleEl) titleEl.textContent = title;
+        if (messageEl) messageEl.textContent = message;
+        if (emailEl) emailEl.textContent = this.currentUser?.email || '-';
+
+        document.getElementById('loginScreen').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        this.setAuthPanel('pendingApprovalCard');
+    },
+
+    setAuthPanel(activePanelId) {
+        ['loginForm', 'signupForm', 'forgotPasswordForm', 'pendingApprovalCard'].forEach((panelId) => {
+            const panel = document.getElementById(panelId);
+            if (panel) {
+                panel.style.display = panelId === activePanelId ? 'block' : 'none';
+            }
         });
     },
-    
-    // Check if current user has required role level
+
+    getRoleConfig(roleKey = this.userProfile?.role) {
+        return this.roles[roleKey] || this.roles.baker;
+    },
+
+    isApproved() {
+        if (!this.currentUser || !this.userProfile) return false;
+        return this.userProfile.approved === true || this.userProfile.role === 'admin';
+    },
+
     hasRole(minRole) {
-        const userLevel = this.roles[this.userProfile?.role]?.level || 0;
+        const userLevel = this.getRoleConfig().level || 0;
         const requiredLevel = this.roles[minRole]?.level || 0;
         return userLevel >= requiredLevel;
     },
-    
+
     requireRole(minRole) {
         if (!this.hasRole(minRole)) {
             Toast.error('You do not have permission for this action');
@@ -118,75 +214,129 @@ const Auth = {
         return true;
     },
 
-    // Show login form
+    hasPermission(permission) {
+        if (!this.currentUser || !this.userProfile) return false;
+
+        const permissions = this.getRoleConfig().permissions || [];
+        if (permissions.includes('*')) return true;
+
+        return permissions.some((granted) => {
+            if (granted === permission) return true;
+            if (granted.endsWith('.*')) {
+                return permission.startsWith(granted.slice(0, -1));
+            }
+            return false;
+        });
+    },
+
+    requirePermission(permission, message = 'You do not have permission for this action') {
+        if (!this.hasPermission(permission)) {
+            Toast.error(message);
+            return false;
+        }
+        return true;
+    },
+
+    getViewPermission(viewName) {
+        return this.viewPermissions[viewName] || null;
+    },
+
+    canAccessView(viewName) {
+        const permission = this.getViewPermission(viewName);
+        return permission ? this.hasPermission(permission) : false;
+    },
+
+    updateUserDisplay() {
+        const userNameEl = document.getElementById('currentUserName');
+        const userRoleEl = document.getElementById('currentUserRole');
+        const role = this.getRoleConfig();
+
+        if (userNameEl && this.userProfile) {
+            userNameEl.textContent = this.userProfile.displayName || this.currentUser.email;
+        }
+        if (userRoleEl) {
+            userRoleEl.textContent = role.name;
+        }
+
+        this.updateNavVisibility();
+        this.updateActionVisibility();
+    },
+
+    updateNavVisibility() {
+        document.querySelectorAll('.nav-link[data-view]').forEach((link) => {
+            const canAccess = this.canAccessView(link.dataset.view);
+            link.style.display = canAccess ? '' : 'none';
+        });
+
+        document.querySelectorAll('.nav-section').forEach((section) => {
+            const hasVisibleLink = Array.from(section.querySelectorAll('.nav-link[data-view]'))
+                .some((link) => link.style.display !== 'none');
+            section.style.display = hasVisibleLink ? '' : 'none';
+        });
+    },
+
+    updateActionVisibility() {
+        const newProductionBtn = document.getElementById('newProductionBtn');
+        if (newProductionBtn) {
+            newProductionBtn.style.display = this.hasPermission('production.run') ? '' : 'none';
+        }
+    },
+
     showLoginForm() {
-        document.getElementById('loginForm').style.display = 'block';
-        document.getElementById('signupForm').style.display = 'none';
-        document.getElementById('forgotPasswordForm').style.display = 'none';
+        this.setAuthPanel('loginForm');
     },
-    
-    // Show signup form
+
     showSignupForm() {
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('signupForm').style.display = 'block';
-        document.getElementById('forgotPasswordForm').style.display = 'none';
+        this.setAuthPanel('signupForm');
     },
-    
-    // Show forgot password form
+
     showForgotPasswordForm() {
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('signupForm').style.display = 'none';
-        document.getElementById('forgotPasswordForm').style.display = 'block';
+        this.setAuthPanel('forgotPasswordForm');
     },
-    
-    // Sign up with email/password
+
     async signUp() {
         const name = document.getElementById('signupName').value.trim();
         const email = document.getElementById('signupEmail').value.trim();
         const password = document.getElementById('signupPassword').value;
         const confirmPassword = document.getElementById('signupConfirmPassword').value;
-        
-        // Validation
+
         if (!name || !email || !password) {
             Toast.error('Please fill all fields');
             return;
         }
-        
+
         if (password.length < 6) {
             Toast.error('Password must be at least 6 characters');
             return;
         }
-        
+
         if (password !== confirmPassword) {
             Toast.error('Passwords do not match');
             return;
         }
-        
+
         try {
             this.setLoading(true, 'signup');
-            
-            // Create user in Firebase Auth
+
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
-            
-            // Check if this is the owner email
             const isOwner = email.toLowerCase() === this.ownerEmail.toLowerCase();
-            
-            // Create user profile in Firestore
+
             await db.collection('users').doc(user.uid).set({
                 uid: user.uid,
-                email: email,
+                email,
                 displayName: name,
-                role: isOwner ? 'admin' : 'baker',    // Owner = admin, others = baker
-                approved: isOwner ? true : false,      // Owner auto-approved
+                role: isOwner ? 'admin' : 'baker',
+                approved: isOwner,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 createdBy: isOwner ? 'system' : null
             });
-            
-            Toast.success(isOwner 
-                ? 'Welcome! You are the admin.' 
-                : 'Account created! Waiting for admin approval.');
-            
+
+            Toast.success(
+                isOwner
+                    ? 'Welcome! You are the admin.'
+                    : 'Account created. Waiting for admin approval before access is granted.'
+            );
         } catch (error) {
             console.error('Signup error:', error);
             if (error.code === 'auth/email-already-in-use') {
@@ -200,17 +350,16 @@ const Auth = {
             this.setLoading(false, 'signup');
         }
     },
-    
-    // Sign in with email/password
+
     async signIn() {
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value;
-        
+
         if (!email || !password) {
             Toast.error('Please enter email and password');
             return;
         }
-        
+
         try {
             this.setLoading(true, 'login');
             await firebase.auth().signInWithEmailAndPassword(email, password);
@@ -228,11 +377,10 @@ const Auth = {
             this.setLoading(false, 'login');
         }
     },
-    
-    // Sign out
+
     async signOut() {
         if (!confirm('Are you sure you want to sign out?')) return;
-        
+
         try {
             await firebase.auth().signOut();
             Toast.success('Signed out');
@@ -241,16 +389,15 @@ const Auth = {
             Toast.error('Failed to sign out');
         }
     },
-    
-    // Send password reset email
+
     async resetPassword() {
         const email = document.getElementById('resetEmail').value.trim();
-        
+
         if (!email) {
             Toast.error('Please enter your email');
             return;
         }
-        
+
         try {
             this.setLoading(true, 'reset');
             await firebase.auth().sendPasswordResetEmail(email);
@@ -267,14 +414,14 @@ const Auth = {
             this.setLoading(false, 'reset');
         }
     },
-    
+
     setLoading(loading, formType) {
         const buttons = {
             login: document.getElementById('loginBtn'),
             signup: document.getElementById('signupBtn'),
             reset: document.getElementById('resetBtn')
         };
-        
+
         const btn = buttons[formType];
         if (btn) {
             btn.disabled = loading;

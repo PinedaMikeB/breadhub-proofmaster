@@ -7,11 +7,16 @@ const Users = {
     data: [],
     
     async init() {
-        if (!Auth.hasRole('admin')) return;
+        if (!Auth.hasPermission('users.manage')) return;
         await this.load();
     },
     
     async load() {
+        if (!Auth.hasPermission('users.manage')) {
+            this.data = [];
+            return;
+        }
+
         try {
             const snapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
             this.data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -24,7 +29,7 @@ const Users = {
         const container = document.getElementById('usersTableBody');
         if (!container) return;
         
-        if (!Auth.hasRole('admin')) {
+        if (!Auth.hasPermission('users.manage')) {
             container.innerHTML = '<tr><td colspan="6">Admin access required</td></tr>';
             return;
         }
@@ -77,7 +82,7 @@ const Users = {
     },
     
     async approve(userId) {
-        if (!Auth.requireRole('admin')) return;
+        if (!Auth.requirePermission('users.manage')) return;
         
         try {
             await db.collection('users').doc(userId).update({
@@ -95,7 +100,7 @@ const Users = {
     },
     
     editRole(userId) {
-        if (!Auth.requireRole('admin')) return;
+        if (!Auth.requirePermission('users.manage')) return;
         
         const user = this.data.find(u => u.id === userId);
         if (!user) return;
@@ -123,9 +128,10 @@ const Users = {
                     <div style="background: var(--bg-input); padding: 12px; border-radius: 8px; margin-top: 12px;">
                         <strong>Role Permissions:</strong>
                         <ul style="margin: 8px 0 0 20px; font-size: 0.9rem;">
-                            <li><strong>Admin:</strong> Full access, manage users</li>
-                            <li><strong>Manager:</strong> Edit recipes & products, view costs</li>
-                            <li><strong>Baker:</strong> Production runs only, view recipes</li>
+                            <li><strong>Admin:</strong> Full access, user management, future fraud tools</li>
+                            <li><strong>Manager:</strong> Operations, recipes, reports, BI</li>
+                            <li><strong>Purchaser:</strong> Purchase requests and suppliers only</li>
+                            <li><strong>Baker:</strong> Dashboard, inventory, production, timers, history</li>
                         </ul>
                     </div>
                 </form>
@@ -136,6 +142,8 @@ const Users = {
     },
 
     async saveRole(userId) {
+        if (!Auth.requirePermission('users.manage')) return;
+
         const form = document.getElementById('roleForm');
         const formData = new FormData(form);
         const newRole = formData.get('role');
@@ -157,7 +165,7 @@ const Users = {
     },
     
     async remove(userId) {
-        if (!Auth.requireRole('admin')) return;
+        if (!Auth.requirePermission('users.manage')) return;
         
         const user = this.data.find(u => u.id === userId);
         if (!user) return;

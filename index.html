@@ -92,6 +92,19 @@
                     <a href="#" onclick="Auth.showLoginForm(); return false;">← Back to Sign In</a>
                 </div>
             </div>
+            <div id="pendingApprovalCard" class="auth-form" style="display: none;">
+                <h2 id="pendingApprovalTitle">Waiting for Approval</h2>
+                <p id="pendingApprovalMessage" style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Your account has not been approved yet.
+                </p>
+                <div style="background: var(--bg-input); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px;">Signed in as</div>
+                    <div id="pendingApprovalEmail" style="font-weight: 600;">-</div>
+                </div>
+                <button class="btn btn-secondary btn-block" onclick="Auth.signOut()">
+                    Sign Out
+                </button>
+            </div>
         </div>
     </div>
 
@@ -208,6 +221,9 @@
                 <div class="nav-section" data-min-role="admin">
                     <span class="nav-label">Admin</span>
                     <ul class="nav-menu">
+                        <li><a href="#" data-view="fraudDetection" class="nav-link">
+                            <span class="nav-icon">🛡️</span> Fraud Review
+                        </a></li>
                         <li><a href="#" data-view="users" class="nav-link">
                             <span class="nav-icon">👥</span> User Management
                         </a></li>
@@ -740,6 +756,17 @@
                     </div>
                 </div>
 
+                <!-- Fraud Review View -->
+                <div id="fraudDetectionView" class="view">
+                    <div class="view-header">
+                        <h2>🛡️ Fraud Review</h2>
+                        <p style="color:#666;font-size:0.9rem;">Read-only CCTV and POS incident inbox</p>
+                    </div>
+                    <div id="fraudDetectionContent">
+                        <p class="empty-state">Loading fraud incident inbox...</p>
+                    </div>
+                </div>
+
                 <!-- Base Breads View -->
                 <div id="baseBreadsView" class="view">
                     <div class="view-header">
@@ -840,6 +867,7 @@
     <script src="js/inventory.js"></script>
     <script src="js/inventory-reports.js"></script>
     <script src="js/business-intelligence.js"></script>
+    <script src="js/fraud-review.js"></script>
     <script src="js/finishing-station.js"></script>
     <script src="js/purchase-requests.js"></script>
     <script src="js/production.js"></script>

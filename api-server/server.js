@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
 import { readFileSync } from 'fs';
+import { buildCorrelatedIncidents, persistCorrelatedIncidents } from './fraud-correlation.js';
 
 dotenv.config();
 
@@ -50,6 +51,63 @@ const dateRange = (period = 'today') => {
   else d.setDate(d.getDate() - 1);
   return { start: d.toISOString().split('T')[0], end };
 };
+
+const toIso = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
+const incidentSortTime = (incident) => {
+  return new Date(
+    incident.incidentAt ||
+    incident.createdAt ||
+    incident.incidentWindowStart ||
+    0
+  ).getTime();
+};
+
+const serializeIncident = (doc) => {
+  const row = doc.data();
+  return {
+    id: doc.id,
+    type: row.type || 'incident',
+    title: row.title || 'Suspicious Cashier Incident',
+    severity: row.severity || 'medium',
+    status: row.status || 'open',
+    incidentAt: toIso(row.incidentAt || row.createdAt),
+    incidentWindowStart: toIso(row.incidentWindowStart),
+    incidentWindowEnd: toIso(row.incidentWindowEnd),
+    cashierId: row.cashierId || null,
+    cashierName: row.cashierName || row.cashierId || 'Unassigned',
+    matchedSaleId: row.matchedSaleId || null,
+    saleAmount: row.saleAmount ?? null,
+    posRegistered: row.posRegistered === true,
+    regionTags: Array.isArray(row.regionTags) ? row.regionTags : [],
+    evidenceSummary: row.evidenceSummary || '',
+    cameraName: row.cameraName || 'Cashier Camera',
+    shinobiMonitorId: row.shinobiMonitorId || row.monitorId || null,
+    source: row.source || 'correlation-engine',
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt)
+  };
+};
+
+const parsePositiveInt = (value, fallback, max) => {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return typeof max === 'number' ? Math.min(parsed, max) : parsed;
+};
+
+const getCorrelationOptions = (source = {}) => ({
+  hours: parsePositiveInt(source.hours, 12, 72),
+  eventLimit: parsePositiveInt(source.event_limit || source.eventLimit, 1000, 5000),
+  saleMatchWindowSeconds: parsePositiveInt(source.sale_window_seconds || source.saleMatchWindowSeconds, 120, 900),
+  clusterGapSeconds: parsePositiveInt(source.cluster_gap_seconds || source.clusterGapSeconds, 20, 180),
+  customerInteractionSeconds: parsePositiveInt(source.customer_interaction_seconds || source.customerInteractionSeconds, 45, 600)
+});
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, service: 'Breadhub Proofmaster API', timestamp: new Date().toISOString() });
@@ -220,6 +278,103 @@ app.get('/api/analysis/recommendations', async (req, res) => {
   }
 });
 
+app.get('/api/fraud/incidents', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+    const status = req.query.status || null;
+    const severity = req.query.severity || null;
+    const cashierId = req.query.cashierId || null;
+
+    const snapshot = await db.collection('fraudIncidents').limit(200).get();
+    let incidents = snapshot.docs.map(serializeIncident);
+
+    incidents.sort((a, b) => incidentSortTime(b) - incidentSortTime(a));
+
+    if (status) incidents = incidents.filter((incident) => incident.status === status);
+    if (severity) incidents = incidents.filter((incident) => incident.severity === severity);
+    if (cashierId) incidents = incidents.filter((incident) => incident.cashierId === cashierId);
+
+    incidents = incidents.slice(0, limit);
+
+    res.json({
+      success: true,
+      data: {
+        count: incidents.length,
+        incidents
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch fraud incidents', message: error.message });
+  }
+});
+
+app.get('/api/fraud/summary', async (req, res) => {
+  try {
+    const windowDays = Math.min(parseInt(req.query.window_days || '7', 10), 30);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - windowDays);
+
+    const snapshot = await db.collection('fraudIncidents').limit(500).get();
+    const incidents = snapshot.docs
+      .map(serializeIncident)
+      .filter((incident) => {
+        const incidentAt = incident.incidentAt ? new Date(incident.incidentAt) : null;
+        return incidentAt && incidentAt >= cutoff;
+      });
+
+    const summary = {
+      windowDays,
+      total: incidents.length,
+      open: incidents.filter((incident) => incident.status === 'open').length,
+      reviewing: incidents.filter((incident) => incident.status === 'reviewing').length,
+      critical: incidents.filter((incident) => incident.severity === 'critical').length,
+      high: incidents.filter((incident) => incident.severity === 'high').length,
+      noSaleFound: incidents.filter((incident) => !incident.matchedSaleId).length,
+      customerInvolved: incidents.filter((incident) => incident.regionTags.includes('Customer')).length
+    };
+
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch fraud summary', message: error.message });
+  }
+});
+
+app.get('/api/fraud/correlation/preview', async (req, res) => {
+  try {
+    const options = getCorrelationOptions(req.query);
+    const result = await buildCorrelatedIncidents(db, options);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to build fraud correlation preview',
+      message: error.message
+    });
+  }
+});
+
+app.post('/api/fraud/correlation/run', async (req, res) => {
+  try {
+    const options = getCorrelationOptions({ ...(req.query || {}), ...(req.body || {}) });
+    const result = await persistCorrelatedIncidents(db, options);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to persist correlated fraud incidents',
+      message: error.message
+    });
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -229,7 +384,11 @@ app.use((req, res) => {
       'GET /api/production/daily',
       'GET /api/waste/summary',
       'GET /api/runouts',
-      'GET /api/analysis/recommendations'
+      'GET /api/analysis/recommendations',
+      'GET /api/fraud/incidents',
+      'GET /api/fraud/summary',
+      'GET /api/fraud/correlation/preview',
+      'POST /api/fraud/correlation/run'
     ]
   });
 });

@@ -11,6 +11,8 @@ A complete bakery production management and quality control system for BreadHub,
 - **Multi-Timer System**: Simultaneous proofing and baking timers with alerts
 - **Cost Analysis**: Full cost breakdown per product with margin tracking
 - **Quality Control**: QA checkpoints at mixing, proofing, and baking stages
+- **Fraud Review Inbox**: Admin-only starter incident inbox for future CCTV/POS correlation
+- **Fraud Correlation API**: First pass API routes to correlate POS sales with Shinobi motion events into reviewable incidents
 
 ## 🚀 Quick Start
 
@@ -130,6 +132,15 @@ Edit `js/config.js` to customize:
 - No build process required
 - Works offline with Firestore persistence
 - Mobile-responsive design
+
+## Session Handoffs
+
+- CCTV / fraud system handoff: `HANDOFF-2026-03-17-CCTV-FRAUD.md`
+- This covers the local Shinobi CCTV runtime, Hikvision setup, current Docker/WSL issue, and the planned ProofMaster fraud-admin direction.
+- Fraud inbox schema: `FRAUD-INBOX-SCHEMA.md`
+- This defines the starter `fraudIncidents` collection shape used by the new admin inbox.
+- API server fraud correlation writer: `api-server/server.js` + `api-server/fraud-correlation.js`
+- These add preview/persist routes that cluster Shinobi motion regions and match them against POS sales.
 
 ## 📱 Future Enhancements
 

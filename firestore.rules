@@ -204,6 +204,10 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /fraudIncidents/{docId} {
+      allow read, write: if isAdmin();
+    }
+
     // Legacy POS collections using PIN-based auth and direct Firestore access.
     match /staff/{docId} {
       allow read, write: if posEmergencyAccess();
