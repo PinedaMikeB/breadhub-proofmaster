@@ -254,7 +254,9 @@ const FraudReview = {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: true,
+            hourCycle: 'h12'
         });
     },
 
@@ -263,7 +265,9 @@ const FraudReview = {
         if (!date) return '-';
         return date.toLocaleTimeString('en-PH', {
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: true,
+            hourCycle: 'h12'
         });
     },
 

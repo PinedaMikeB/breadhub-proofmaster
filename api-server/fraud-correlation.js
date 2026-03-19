@@ -46,6 +46,8 @@ const slugify = (value) => String(value || '')
 
 const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '');
 
+const trimLeadingSlash = (value) => String(value || '').replace(/^\/+/, '');
+
 const buildDateKeys = (hours) => {
   const keys = new Set();
   const now = new Date();
@@ -113,16 +115,24 @@ const parseEventRow = (columns) => {
   };
 };
 
-const formatShinobiVideoFilename = (timestamp, extension = 'mp4') => {
+const formatShinobiVideoFilename = (timestamp, extension = 'mp4', rawTimestamp = null) => {
+  if (typeof rawTimestamp === 'string' && rawTimestamp.trim()) {
+    return `${rawTimestamp.trim().replace(' ', 'T').replace(/:/g, '-')}.${extension}`;
+  }
+
   const date = toDate(timestamp);
   if (!date) return null;
 
-  const [isoDate, isoTime] = date.toISOString().split('T');
-  const timePart = (isoTime || '').split('.')[0].replace(/:/g, '-');
-  return `${isoDate}T${timePart}.${extension}`;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}-${minute}-${second}.${extension}`;
 };
 
-const parseVideoRow = (columns, baseUrl = DEFAULTS.shinobiBaseUrl) => {
+const parseVideoRow = (columns, baseUrl = DEFAULTS.shinobiBaseUrl, authToken = null) => {
   const [mid, ke, time, end, ext, detailsRaw] = columns;
   const start = toDate(time);
   const finish = toDate(end);
@@ -135,9 +145,10 @@ const parseVideoRow = (columns, baseUrl = DEFAULTS.shinobiBaseUrl) => {
     details = {};
   }
 
-  const filename = formatShinobiVideoFilename(start, ext || 'mp4');
+  const filename = formatShinobiVideoFilename(start, ext || 'mp4', time);
   const normalizedBaseUrl = trimTrailingSlash(baseUrl);
-  const clipPath = filename ? `/videos/${ke}/${mid}/${filename}` : null;
+  const tokenSegment = authToken ? `/${trimLeadingSlash(authToken)}` : '';
+  const clipPath = filename ? `${tokenSegment}/videos/${ke}/${mid}/${filename}` : null;
 
   return {
     id: `${mid}-${start.toISOString()}`,
@@ -363,11 +374,31 @@ export async function fetchRecentShinobiEvents(options = {}) {
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
+export async function fetchShinobiAuthToken(options = {}) {
+  const container = options.shinobiContainer || DEFAULTS.shinobiContainer;
+  const { stdout } = await execFileAsync('docker', [
+    'exec',
+    container,
+    'mysql',
+    '-uroot',
+    '-N',
+    '-B',
+    '-e',
+    "SELECT auth FROM ccio.Users WHERE auth IS NOT NULL AND auth != '' ORDER BY mail ASC LIMIT 1;"
+  ], {
+    windowsHide: true,
+    maxBuffer: 1024 * 1024
+  });
+
+  return String(stdout || '').trim() || null;
+}
+
 export async function fetchRecentShinobiVideos(options = {}) {
   const hours = escapeSqlInt(options.hours, DEFAULTS.eventLookbackHours);
   const limit = escapeSqlInt(options.limit, DEFAULTS.eventLimit);
   const container = options.shinobiContainer || DEFAULTS.shinobiContainer;
   const baseUrl = options.shinobiBaseUrl || DEFAULTS.shinobiBaseUrl;
+  const authToken = options.shinobiAuthToken || null;
 
   const { stdout } = await execFileAsync('docker', [
     'exec',
@@ -385,7 +416,7 @@ export async function fetchRecentShinobiVideos(options = {}) {
   });
 
   return parseMysqlTsv(stdout)
-    .map((columns) => parseVideoRow(columns, baseUrl))
+    .map((columns) => parseVideoRow(columns, baseUrl, authToken))
     .filter(Boolean)
     .sort((a, b) => a.start - b.start);
 }
@@ -396,16 +427,21 @@ export async function buildCorrelatedIncidents(db, options = {}) {
   const saleMatchWindowSeconds = escapeSqlInt(options.saleMatchWindowSeconds, DEFAULTS.saleMatchWindowSeconds);
   const customerInteractionSeconds = escapeSqlInt(options.customerInteractionSeconds, DEFAULTS.customerInteractionSeconds);
 
-  const [sales, events, videos] = await Promise.all([
+  const [sales, events, shinobiAuthToken] = await Promise.all([
     fetchRecentSales(db, hours),
     fetchRecentShinobiEvents({ hours, limit: options.eventLimit, shinobiContainer: options.shinobiContainer }),
-    fetchRecentShinobiVideos({
+    fetchShinobiAuthToken({
+      shinobiContainer: options.shinobiContainer
+    })
+  ]);
+
+  const videos = await fetchRecentShinobiVideos({
       hours,
       limit: options.videoLimit || options.eventLimit,
       shinobiContainer: options.shinobiContainer,
-      shinobiBaseUrl: options.shinobiBaseUrl
-    })
-  ]);
+      shinobiBaseUrl: options.shinobiBaseUrl,
+      shinobiAuthToken: shinobiAuthToken
+    });
 
   const clusters = clusterEvents(events, clusterGapSeconds);
   const incidents = [];

@@ -448,7 +448,8 @@ const App = {
             const timeStr = now.toLocaleTimeString('en-PH', {
                 hour: '2-digit',
                 minute: '2-digit',
-                second: '2-digit'
+                hour12: true,
+                hourCycle: 'h12'
             });
             const el = document.getElementById('currentTime');
             if (el) el.textContent = timeStr;
