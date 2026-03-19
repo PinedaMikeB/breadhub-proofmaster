@@ -22,7 +22,7 @@ npm run dev
 - `GET /api/fraud/incidents?limit=50&status=open&severity=high&from=2026-03-18&to=2026-03-19`
 - `GET /api/fraud/summary?window_days=7`
 - `GET /api/fraud/monitor-state`
-- `GET /api/fraud/correlation/preview?hours=12&event_limit=1000&sale_window_seconds=120&cluster_gap_seconds=20&customer_interaction_seconds=45`
+- `GET /api/fraud/correlation/preview?hours=12&event_limit=1000&sale_window_seconds=120&drawer_cash_sale_window_seconds=300&cluster_gap_seconds=20&customer_interaction_seconds=45`
 - `POST /api/fraud/correlation/run`
 
 All endpoints require `x-api-key`.
@@ -59,13 +59,13 @@ For the CCTV PC, use the local correlation runner instead of relying on a perman
 One-off run:
 
 ```bash
-node run-fraud-monitor.js --once --hours=48 --event-limit=3000
+node run-fraud-monitor.js --once --hours=48 --event-limit=3000 --drawer-cash-sale-window-seconds=300
 ```
 
 Continuous loop in one terminal:
 
 ```bash
-node run-fraud-monitor.js --continuous --interval-minutes=5 --hours=12
+node run-fraud-monitor.js --continuous --interval-minutes=5 --hours=12 --drawer-cash-sale-window-seconds=300
 ```
 
 Windows scheduled task registration:

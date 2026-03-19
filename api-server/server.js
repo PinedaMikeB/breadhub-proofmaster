@@ -110,6 +110,7 @@ const getCorrelationOptions = (source = {}) => ({
   hours: parsePositiveInt(source.hours, 12, 72),
   eventLimit: parsePositiveInt(source.event_limit || source.eventLimit, 1000, 5000),
   saleMatchWindowSeconds: parsePositiveInt(source.sale_window_seconds || source.saleMatchWindowSeconds, 120, 900),
+  drawerCashSaleWindowSeconds: parsePositiveInt(source.drawer_cash_sale_window_seconds || source.drawerCashSaleWindowSeconds, 300, 1200),
   clusterGapSeconds: parsePositiveInt(source.cluster_gap_seconds || source.clusterGapSeconds, 20, 180),
   customerInteractionSeconds: parsePositiveInt(source.customer_interaction_seconds || source.customerInteractionSeconds, 45, 600)
 });

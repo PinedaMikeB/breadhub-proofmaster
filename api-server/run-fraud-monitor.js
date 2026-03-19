@@ -7,6 +7,7 @@ const DEFAULTS = {
   eventLimit: Math.max(parseInt(process.env.FRAUD_EVENT_LIMIT || '2000', 10), 50),
   videoLimit: Math.max(parseInt(process.env.FRAUD_VIDEO_LIMIT || process.env.FRAUD_EVENT_LIMIT || '2000', 10), 50),
   saleMatchWindowSeconds: Math.max(parseInt(process.env.FRAUD_SALE_MATCH_WINDOW_SECONDS || '120', 10), 30),
+  drawerCashSaleWindowSeconds: Math.max(parseInt(process.env.FRAUD_DRAWER_CASH_SALE_WINDOW_SECONDS || '300', 10), 60),
   clusterGapSeconds: Math.max(parseInt(process.env.FRAUD_CLUSTER_GAP_SECONDS || '20', 10), 5),
   customerInteractionSeconds: Math.max(parseInt(process.env.FRAUD_CUSTOMER_INTERACTION_SECONDS || '45', 10), 10),
   intervalMinutes: Math.max(parseInt(process.env.FRAUD_MONITOR_INTERVAL_MINUTES || '5', 10), 1),
@@ -50,6 +51,7 @@ const buildOptions = (args) => ({
   eventLimit: toInt(args['event-limit'], DEFAULTS.eventLimit),
   videoLimit: toInt(args['video-limit'], DEFAULTS.videoLimit),
   saleMatchWindowSeconds: toInt(args['sale-window-seconds'], DEFAULTS.saleMatchWindowSeconds),
+  drawerCashSaleWindowSeconds: toInt(args['drawer-cash-sale-window-seconds'], DEFAULTS.drawerCashSaleWindowSeconds),
   clusterGapSeconds: toInt(args['cluster-gap-seconds'], DEFAULTS.clusterGapSeconds),
   customerInteractionSeconds: toInt(args['customer-interaction-seconds'], DEFAULTS.customerInteractionSeconds)
 });

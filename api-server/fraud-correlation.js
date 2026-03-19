@@ -9,6 +9,7 @@ const DEFAULTS = {
   eventLookbackHours: Math.max(parseInt(process.env.FRAUD_EVENT_LOOKBACK_HOURS || '12', 10), 1),
   eventLimit: Math.max(parseInt(process.env.FRAUD_EVENT_LIMIT || '1000', 10), 50),
   saleMatchWindowSeconds: Math.max(parseInt(process.env.FRAUD_SALE_MATCH_WINDOW_SECONDS || '120', 10), 30),
+  drawerCashSaleWindowSeconds: Math.max(parseInt(process.env.FRAUD_DRAWER_CASH_SALE_WINDOW_SECONDS || '300', 10), 60),
   clusterGapSeconds: Math.max(parseInt(process.env.FRAUD_CLUSTER_GAP_SECONDS || '20', 10), 5),
   customerInteractionSeconds: Math.max(parseInt(process.env.FRAUD_CUSTOMER_INTERACTION_SECONDS || '45', 10), 10)
 };
@@ -230,6 +231,52 @@ const findClosestSale = (cluster, sales, saleMatchWindowSeconds) => {
   return bestMatch ? bestMatch.sale : null;
 };
 
+const normalizePaymentMethod = (value) => String(value || '').trim().toLowerCase();
+
+const findRecentCashSaleForDrawer = (cluster, sales, drawerCashSaleWindowSeconds) => {
+  const hasDrawer = cluster.regionTags.includes('Drawer');
+  if (!hasDrawer) return null;
+
+  const windowMs = drawerCashSaleWindowSeconds * 1000;
+  let bestMatch = null;
+
+  for (const sale of sales) {
+    if (normalizePaymentMethod(sale.paymentMethod) !== 'cash') continue;
+
+    const diff = cluster.incidentAt.getTime() - sale.timestamp.getTime();
+    if (diff < 0 || diff > windowMs) continue;
+
+    if (!bestMatch || diff < bestMatch.diff) {
+      bestMatch = { sale, diff };
+    }
+  }
+
+  return bestMatch ? bestMatch.sale : null;
+};
+
+const findSaleMatch = (cluster, sales, options = {}) => {
+  const directSale = findClosestSale(cluster, sales, options.saleMatchWindowSeconds);
+  if (directSale) {
+    return {
+      sale: directSale,
+      matchKind: 'direct'
+    };
+  }
+
+  const delayedCashSale = findRecentCashSaleForDrawer(cluster, sales, options.drawerCashSaleWindowSeconds);
+  if (delayedCashSale) {
+    return {
+      sale: delayedCashSale,
+      matchKind: 'delayed_cash_drawer'
+    };
+  }
+
+  return {
+    sale: null,
+    matchKind: 'none'
+  };
+};
+
 const findBestVideo = (cluster, videos) => {
   const incidentAt = cluster.incidentAt.getTime();
   const sameMonitorVideos = videos.filter((video) => video.mid === cluster.mid && video.ke === cluster.ke);
@@ -250,9 +297,13 @@ const findBestVideo = (cluster, videos) => {
   return nearestVideo ? nearestVideo.video : null;
 };
 
-const classifyCluster = (cluster, matchedSale, customerInteractionSeconds) => {
+const classifyCluster = (cluster, matchedSale, customerInteractionSeconds, matchKind = 'none') => {
   const tags = new Set(cluster.regionTags);
   const has = (tag) => tags.has(tag);
+
+  if (matchKind === 'delayed_cash_drawer') {
+    return null;
+  }
 
   if (has('Customer') && has('Handoff') && !matchedSale) {
     return {
@@ -425,6 +476,10 @@ export async function buildCorrelatedIncidents(db, options = {}) {
   const hours = escapeSqlInt(options.hours, DEFAULTS.eventLookbackHours);
   const clusterGapSeconds = escapeSqlInt(options.clusterGapSeconds, DEFAULTS.clusterGapSeconds);
   const saleMatchWindowSeconds = escapeSqlInt(options.saleMatchWindowSeconds, DEFAULTS.saleMatchWindowSeconds);
+  const drawerCashSaleWindowSeconds = escapeSqlInt(
+    options.drawerCashSaleWindowSeconds,
+    DEFAULTS.drawerCashSaleWindowSeconds
+  );
   const customerInteractionSeconds = escapeSqlInt(options.customerInteractionSeconds, DEFAULTS.customerInteractionSeconds);
 
   const [sales, events, shinobiAuthToken] = await Promise.all([
@@ -447,9 +502,13 @@ export async function buildCorrelatedIncidents(db, options = {}) {
   const incidents = [];
 
   for (const cluster of clusters) {
-    const matchedSale = findClosestSale(cluster, sales, saleMatchWindowSeconds);
+    const saleMatch = findSaleMatch(cluster, sales, {
+      saleMatchWindowSeconds,
+      drawerCashSaleWindowSeconds
+    });
+    const matchedSale = saleMatch.sale;
     const matchedVideo = findBestVideo(cluster, videos);
-    const classification = classifyCluster(cluster, matchedSale, customerInteractionSeconds);
+    const classification = classifyCluster(cluster, matchedSale, customerInteractionSeconds, saleMatch.matchKind);
     if (!classification) continue;
     const incident = buildIncidentDoc(cluster, matchedSale, matchedVideo, classification);
     incidents.push({
@@ -464,6 +523,7 @@ export async function buildCorrelatedIncidents(db, options = {}) {
       hours,
       clusterGapSeconds,
       saleMatchWindowSeconds,
+      drawerCashSaleWindowSeconds,
       customerInteractionSeconds
     },
     sourceCounts: {
