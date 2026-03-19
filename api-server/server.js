@@ -114,6 +114,13 @@ const getCorrelationOptions = (source = {}) => ({
   customerInteractionSeconds: parsePositiveInt(source.customer_interaction_seconds || source.customerInteractionSeconds, 45, 600)
 });
 
+const parseDateBoundary = (value, boundary = 'start') => {
+  if (!value) return null;
+  const suffix = boundary === 'end' ? 'T23:59:59.999' : 'T00:00:00.000';
+  const parsed = new Date(`${value}${suffix}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 app.get('/api/health', (req, res) => {
   res.json({ success: true, service: 'Breadhub Proofmaster API', timestamp: new Date().toISOString() });
 });
@@ -289,8 +296,14 @@ app.get('/api/fraud/incidents', async (req, res) => {
     const status = req.query.status || null;
     const severity = req.query.severity || null;
     const cashierId = req.query.cashierId || null;
+    const fromDate = parseDateBoundary(req.query.from, 'start');
+    const toDate = parseDateBoundary(req.query.to, 'end');
 
-    const snapshot = await db.collection('fraudIncidents').limit(200).get();
+    let query = db.collection('fraudIncidents');
+    if (fromDate) query = query.where('incidentAt', '>=', fromDate);
+    if (toDate) query = query.where('incidentAt', '<=', toDate);
+
+    const snapshot = await query.orderBy('incidentAt', 'desc').limit(200).get();
     let incidents = snapshot.docs.map(serializeIncident);
 
     incidents.sort((a, b) => incidentSortTime(b) - incidentSortTime(a));
@@ -344,6 +357,18 @@ app.get('/api/fraud/summary', async (req, res) => {
   }
 });
 
+app.get('/api/fraud/monitor-state', async (req, res) => {
+  try {
+    const snapshot = await db.collection('fraudMonitorState').doc('primary').get();
+    res.json({
+      success: true,
+      data: snapshot.exists ? snapshot.data() : null
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch fraud monitor state', message: error.message });
+  }
+});
+
 app.get('/api/fraud/correlation/preview', async (req, res) => {
   try {
     const options = getCorrelationOptions(req.query);
@@ -392,6 +417,7 @@ app.use((req, res) => {
       'GET /api/analysis/recommendations',
       'GET /api/fraud/incidents',
       'GET /api/fraud/summary',
+      'GET /api/fraud/monitor-state',
       'GET /api/fraud/correlation/preview',
       'POST /api/fraud/correlation/run'
     ]

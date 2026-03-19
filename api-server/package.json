@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "fraud:run": "node run-fraud-monitor.js --once",
+    "fraud:watch": "node run-fraud-monitor.js --continuous"
   },
   "dependencies": {
     "cors": "^2.8.5",

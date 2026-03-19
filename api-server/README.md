@@ -19,8 +19,9 @@ npm run dev
 - `GET /api/waste/summary?period=today|week|month`
 - `GET /api/runouts?date=YYYY-MM-DD`
 - `GET /api/analysis/recommendations?period=today|week|month`
-- `GET /api/fraud/incidents?limit=50&status=open&severity=high`
+- `GET /api/fraud/incidents?limit=50&status=open&severity=high&from=2026-03-18&to=2026-03-19`
 - `GET /api/fraud/summary?window_days=7`
+- `GET /api/fraud/monitor-state`
 - `GET /api/fraud/correlation/preview?hours=12&event_limit=1000&sale_window_seconds=120&cluster_gap_seconds=20&customer_interaction_seconds=45`
 - `POST /api/fraud/correlation/run`
 
@@ -50,3 +51,25 @@ It then clusters nearby Shinobi events and emits `fraudIncidents` for these init
 `GET /api/fraud/correlation/preview` is read-only and returns the candidate incidents without writing anything.
 
 `POST /api/fraud/correlation/run` persists the generated incidents into Firestore `fraudIncidents` using deterministic document IDs, so reruns update the same incident windows instead of creating duplicates.
+
+## 24/7 Fraud Monitor
+
+For the CCTV PC, use the local correlation runner instead of relying on a permanently running API process. The runner can use the Firebase CLI login already present on the machine and writes health into `fraudMonitorState/primary`.
+
+One-off run:
+
+```bash
+node run-fraud-monitor.js --once --hours=48 --event-limit=3000
+```
+
+Continuous loop in one terminal:
+
+```bash
+node run-fraud-monitor.js --continuous --interval-minutes=5 --hours=12
+```
+
+Windows scheduled task registration:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\register-fraud-monitor-task.ps1 -IntervalMinutes 5 -LookbackHours 12
+```

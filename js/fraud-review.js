@@ -1,62 +1,162 @@
 /**
  * BreadHub ProofMaster - Fraud Review Module
  *
- * Read-only incident inbox for correlating CCTV and POS evidence.
- * Live data should eventually come from `fraudIncidents`.
+ * Read-only incident inbox for correlated CCTV and POS review.
+ * This view reads live Firestore documents and supports history browsing.
  */
 
 const FraudReview = {
-    async init() {
+    initialized: false,
+    refreshTimer: null,
+    refreshIntervalMs: 60000,
+    state: null,
+
+    init() {
+        if (this.initialized) return;
+        this.initialized = true;
+        this.resetState();
+        this.startAutoRefresh();
         console.log('Fraud Review module initialized');
     },
 
-    async loadIncidents(limit = 50) {
-        const liveIncidents = await this.fetchFraudIncidents(limit);
+    resetState() {
+        this.state = {
+            fromDate: this.shiftDateString(this.getTodayString(), -2),
+            toDate: this.getTodayString(),
+            status: '',
+            severity: '',
+            limit: 200
+        };
+    },
+
+    getTodayString() {
+        const now = new Date();
+        return [
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, '0'),
+            String(now.getDate()).padStart(2, '0')
+        ].join('-');
+    },
+
+    shiftDateString(dateString, dayDelta) {
+        const date = new Date(`${dateString}T00:00:00`);
+        date.setDate(date.getDate() + dayDelta);
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, '0'),
+            String(date.getDate()).padStart(2, '0')
+        ].join('-');
+    },
+
+    getStartOfDay(dateString) {
+        return new Date(`${dateString}T00:00:00`);
+    },
+
+    getEndOfDay(dateString) {
+        return new Date(`${dateString}T23:59:59.999`);
+    },
+
+    startAutoRefresh() {
+        if (this.refreshTimer) window.clearInterval(this.refreshTimer);
+        this.refreshTimer = window.setInterval(() => {
+            if (window.App?.currentView === 'fraudDetection') {
+                this.render({ silent: true });
+            }
+        }, this.refreshIntervalMs);
+    },
+
+    async loadData() {
+        const [liveIncidents, legacyAlerts, monitorState] = await Promise.all([
+            this.fetchFraudIncidents(this.state),
+            this.fetchLegacyAlerts(this.state),
+            this.fetchMonitorState()
+        ]);
+
         if (liveIncidents.length > 0) {
             return {
                 mode: 'live',
                 source: 'fraudIncidents',
-                incidents: liveIncidents
+                incidents: liveIncidents,
+                monitorState
             };
         }
 
-        const legacyAlerts = await this.fetchLegacyAlerts(limit);
         if (legacyAlerts.length > 0) {
             return {
-                mode: 'live',
+                mode: 'legacy',
                 source: 'fraudAlerts',
-                incidents: legacyAlerts
+                incidents: legacyAlerts,
+                monitorState
             };
         }
 
         return {
-            mode: 'sample',
-            source: 'sample',
-            incidents: this.getSampleIncidents()
+            mode: 'empty',
+            source: 'fraudIncidents',
+            incidents: [],
+            monitorState
         };
     },
 
-    async fetchFraudIncidents(limit) {
+    async fetchFraudIncidents(filters) {
         try {
-            const snapshot = await db.collection('fraudIncidents').limit(limit).get();
-            return snapshot.docs
+            let query = db.collection('fraudIncidents');
+            const fromDate = filters.fromDate || '';
+            const toDate = filters.toDate || '';
+
+            if (fromDate) query = query.where('incidentAt', '>=', this.getStartOfDay(fromDate));
+            if (toDate) query = query.where('incidentAt', '<=', this.getEndOfDay(toDate));
+
+            query = query.orderBy('incidentAt', 'desc').limit(filters.limit || 200);
+
+            const snapshot = await query.get();
+            let incidents = snapshot.docs
                 .map((doc) => this.normalizeIncident({ id: doc.id, ...doc.data() }))
                 .sort((a, b) => this.getSortTime(b) - this.getSortTime(a));
+
+            if (filters.status) incidents = incidents.filter((incident) => incident.status === filters.status);
+            if (filters.severity) incidents = incidents.filter((incident) => incident.severity === filters.severity);
+
+            return incidents;
         } catch (error) {
             console.error('Failed to load fraud incidents:', error);
             return [];
         }
     },
 
-    async fetchLegacyAlerts(limit) {
+    async fetchLegacyAlerts(filters) {
         try {
-            const snapshot = await db.collection('fraudAlerts').limit(limit).get();
-            return snapshot.docs
+            const snapshot = await db.collection('fraudAlerts').limit(filters.limit || 200).get();
+            let alerts = snapshot.docs
                 .map((doc) => this.normalizeLegacyAlert({ id: doc.id, ...doc.data() }))
                 .sort((a, b) => this.getSortTime(b) - this.getSortTime(a));
+
+            const fromTime = filters.fromDate ? this.getStartOfDay(filters.fromDate).getTime() : 0;
+            const toTime = filters.toDate ? this.getEndOfDay(filters.toDate).getTime() : Number.MAX_SAFE_INTEGER;
+
+            alerts = alerts.filter((incident) => {
+                const time = this.getSortTime(incident);
+                return time >= fromTime && time <= toTime;
+            });
+
+            if (filters.status) alerts = alerts.filter((incident) => incident.status === filters.status);
+            if (filters.severity) alerts = alerts.filter((incident) => incident.severity === filters.severity);
+
+            return alerts;
         } catch (error) {
             console.error('Failed to load legacy fraud alerts:', error);
             return [];
+        }
+    },
+
+    async fetchMonitorState() {
+        try {
+            const snapshot = await db.collection('fraudMonitorState').doc('primary').get();
+            if (!snapshot.exists) return null;
+            return snapshot.data();
+        } catch (error) {
+            console.error('Failed to load fraud monitor state:', error);
+            return null;
         }
     },
 
@@ -70,6 +170,7 @@ const FraudReview = {
             incidentAt: raw.incidentAt || raw.createdAt || null,
             incidentWindowStart: raw.incidentWindowStart || null,
             incidentWindowEnd: raw.incidentWindowEnd || null,
+            cashierId: raw.cashierId || null,
             cashierName: raw.cashierName || raw.cashierId || 'Unassigned',
             matchedSaleId: raw.matchedSaleId || null,
             saleAmount: raw.saleAmount ?? null,
@@ -96,6 +197,7 @@ const FraudReview = {
             incidentAt: raw.incidentAt || raw.createdAt || raw.generatedAt || null,
             incidentWindowStart: raw.incidentWindowStart || null,
             incidentWindowEnd: raw.incidentWindowEnd || null,
+            cashierId: raw.cashierId || null,
             cashierName: raw.cashierName || raw.cashierId || 'Unknown',
             matchedSaleId: raw.matchedSaleId || null,
             saleAmount: raw.saleAmount ?? null,
@@ -112,82 +214,21 @@ const FraudReview = {
         };
     },
 
-    getSampleIncidents() {
-        return [
-            {
-                id: 'sample-1',
-                type: 'drawer_without_sale',
-                title: 'Drawer Opened Without Matching Sale',
-                severity: 'high',
-                status: 'open',
-                incidentAt: new Date(Date.now() - (9 * 60 * 1000)).toISOString(),
-                incidentWindowStart: new Date(Date.now() - (10 * 60 * 1000)).toISOString(),
-                incidentWindowEnd: new Date(Date.now() - (8 * 60 * 1000)).toISOString(),
-                cashierName: 'Cashier A',
-                matchedSaleId: null,
-                saleAmount: null,
-                regionTags: ['Drawer', 'Cashier'],
-                posRegistered: false,
-                evidenceSummary: 'Drawer motion detected with cashier presence but no customer region and no POS transaction in the review window.',
-                cameraName: 'Cashier Camera',
-                clipLabel: 'Review around 14:02',
-                clipUrl: 'http://192.168.51.226:8080',
-                source: 'sample'
-            },
-            {
-                id: 'sample-2',
-                type: 'handoff_without_sale',
-                title: 'Customer Handoff Without POS Registration',
-                severity: 'critical',
-                status: 'open',
-                incidentAt: new Date(Date.now() - (32 * 60 * 1000)).toISOString(),
-                incidentWindowStart: new Date(Date.now() - (34 * 60 * 1000)).toISOString(),
-                incidentWindowEnd: new Date(Date.now() - (30 * 60 * 1000)).toISOString(),
-                cashierName: 'Cashier B',
-                matchedSaleId: null,
-                saleAmount: null,
-                regionTags: ['Customer', 'Handoff', 'Cashier'],
-                posRegistered: false,
-                evidenceSummary: 'Customer and handoff activity overlapped, but no sale was found and no drawer event was recorded.',
-                cameraName: 'Cashier Camera',
-                clipLabel: 'Review around 13:39',
-                clipUrl: 'http://192.168.51.226:8080',
-                source: 'sample'
-            },
-            {
-                id: 'sample-3',
-                type: 'customer_sale_mismatch',
-                title: 'Customer Present But Sale Amount Mismatch',
-                severity: 'medium',
-                status: 'reviewing',
-                incidentAt: new Date(Date.now() - (58 * 60 * 1000)).toISOString(),
-                incidentWindowStart: new Date(Date.now() - (60 * 60 * 1000)).toISOString(),
-                incidentWindowEnd: new Date(Date.now() - (56 * 60 * 1000)).toISOString(),
-                cashierName: 'Cashier A',
-                matchedSaleId: 'POS-20260317-1042',
-                saleAmount: 28,
-                regionTags: ['Customer', 'Handoff', 'Drawer', 'Cashier'],
-                posRegistered: true,
-                evidenceSummary: 'All expected motion regions fired, but the sale amount was unusually low for the interaction duration and drawer activity pattern.',
-                cameraName: 'Cashier Camera',
-                clipLabel: 'Review around 13:13',
-                clipUrl: 'http://192.168.51.226:8080',
-                source: 'sample'
-            }
-        ];
-    },
-
     getIncidentTitle(type = '') {
         const titles = {
             drawer_without_sale: 'Drawer Opened Without Matching Sale',
             handoff_without_sale: 'Customer Handoff Without POS Registration',
             customer_sale_mismatch: 'Customer Interaction With Suspicious Sale Pattern',
-            drawer_without_customer: 'Drawer Opened Without Customer Presence'
+            drawer_without_customer: 'Drawer Opened Without Customer Presence',
+            extended_customer_interaction_without_sale: 'Extended Customer Interaction Without Sale'
         };
         return titles[type] || 'Suspicious Cashier Incident';
     },
 
     getClipLabel(raw) {
+        if (raw.clipStart && raw.clipEnd) {
+            return `${this.formatShortTime(raw.clipStart)} - ${this.formatShortTime(raw.clipEnd)}`;
+        }
         const monitorId = raw.shinobiMonitorId || raw.monitorId || raw.mid;
         return monitorId ? `Monitor ${monitorId}` : 'Shinobi clip pending';
     },
@@ -215,6 +256,31 @@ const FraudReview = {
             hour: '2-digit',
             minute: '2-digit'
         });
+    },
+
+    formatShortTime(value) {
+        const date = this.coerceDate(value);
+        if (!date) return '-';
+        return date.toLocaleTimeString('en-PH', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    },
+
+    formatRelativeTime(value) {
+        const date = this.coerceDate(value);
+        if (!date) return 'No run yet';
+        const diffMs = Date.now() - date.getTime();
+        const diffMinutes = Math.max(Math.round(diffMs / 60000), 0);
+
+        if (diffMinutes < 1) return 'just now';
+        if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+        const diffHours = Math.round(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours} hr ago`;
+
+        const diffDays = Math.round(diffHours / 24);
+        return `${diffDays} day(s) ago`;
     },
 
     escapeHtml(value = '') {
@@ -248,17 +314,105 @@ const FraudReview = {
         return `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${style.bg};color:${style.fg};font-weight:600;font-size:0.78rem;text-transform:uppercase;">${this.escapeHtml(status)}</span>`;
     },
 
+    renderFilterBar() {
+        return `
+            <form id="fraudReviewFilters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;align-items:end;margin-bottom:20px;padding:16px;border:1px solid #E5EAF3;border-radius:12px;background:#F9FBFF;">
+                <div>
+                    <label style="display:block;font-size:0.82rem;font-weight:700;color:#5f6368;margin-bottom:6px;">From Date</label>
+                    <input type="date" id="fraudFilterFromDate" class="form-input" value="${this.escapeHtml(this.state.fromDate)}">
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.82rem;font-weight:700;color:#5f6368;margin-bottom:6px;">To Date</label>
+                    <input type="date" id="fraudFilterToDate" class="form-input" value="${this.escapeHtml(this.state.toDate)}">
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.82rem;font-weight:700;color:#5f6368;margin-bottom:6px;">Status</label>
+                    <select id="fraudFilterStatus" class="form-input">
+                        <option value="">All statuses</option>
+                        <option value="open" ${this.state.status === 'open' ? 'selected' : ''}>Open</option>
+                        <option value="reviewing" ${this.state.status === 'reviewing' ? 'selected' : ''}>Reviewing</option>
+                        <option value="resolved" ${this.state.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                        <option value="dismissed" ${this.state.status === 'dismissed' ? 'selected' : ''}>Dismissed</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.82rem;font-weight:700;color:#5f6368;margin-bottom:6px;">Severity</label>
+                    <select id="fraudFilterSeverity" class="form-input">
+                        <option value="">All severities</option>
+                        <option value="critical" ${this.state.severity === 'critical' ? 'selected' : ''}>Critical</option>
+                        <option value="high" ${this.state.severity === 'high' ? 'selected' : ''}>High</option>
+                        <option value="medium" ${this.state.severity === 'medium' ? 'selected' : ''}>Medium</option>
+                        <option value="low" ${this.state.severity === 'low' ? 'selected' : ''}>Low</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.82rem;font-weight:700;color:#5f6368;margin-bottom:6px;">Max Rows</label>
+                    <select id="fraudFilterLimit" class="form-input">
+                        <option value="100" ${this.state.limit === 100 ? 'selected' : ''}>100</option>
+                        <option value="200" ${this.state.limit === 200 ? 'selected' : ''}>200</option>
+                        <option value="500" ${this.state.limit === 500 ? 'selected' : ''}>500</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                    <button type="button" class="btn btn-secondary" data-fraud-preset="today">Today</button>
+                    <button type="button" class="btn btn-secondary" data-fraud-preset="last24h">24 Hours</button>
+                    <button type="button" class="btn btn-secondary" data-fraud-preset="last7d">7 Days</button>
+                </div>
+            </form>
+        `;
+    },
+
+    renderMonitorStateCard(monitorState) {
+        if (!monitorState) {
+            return `
+                <div style="background:#FFF8E1;border:1px solid #FBC02D;color:#6D4C41;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+                    Fraud monitor status not available yet. Run the correlation writer once to start historical incident generation.
+                </div>
+            `;
+        }
+
+        const lastRunAt = monitorState.lastRunAt || null;
+        const status = monitorState.status || 'unknown';
+        const statusPalette = {
+            healthy: { bg: '#E8F5E9', border: '#81C784', fg: '#1B5E20' },
+            error: { bg: '#FFEBEE', border: '#EF9A9A', fg: '#B71C1C' },
+            running: { bg: '#E3F2FD', border: '#64B5F6', fg: '#0D47A1' },
+            unknown: { bg: '#FFF8E1', border: '#FBC02D', fg: '#6D4C41' }
+        };
+        const style = statusPalette[status] || statusPalette.unknown;
+
+        return `
+            <div style="background:${style.bg};border:1px solid ${style.border};color:${style.fg};border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+                <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                    <div>
+                        <strong>Fraud Monitor: ${this.escapeHtml(status)}</strong>
+                        <div style="margin-top:4px;font-size:0.9rem;">
+                            Last run ${this.escapeHtml(this.formatRelativeTime(lastRunAt))} (${this.escapeHtml(this.formatTimestamp(lastRunAt))})
+                        </div>
+                    </div>
+                    <div style="font-size:0.9rem;">
+                        Lookback ${this.escapeHtml(String(monitorState.hours || '-'))}h | Persisted ${this.escapeHtml(String(monitorState.persistedCount || 0))} | Generated ${this.escapeHtml(String(monitorState.generatedCount || 0))}
+                    </div>
+                </div>
+                ${monitorState.lastError ? `<div style="margin-top:10px;font-size:0.9rem;">Last error: ${this.escapeHtml(monitorState.lastError)}</div>` : ''}
+            </div>
+        `;
+    },
+
     renderSummaryCards(incidents) {
         const openCount = incidents.filter((incident) => incident.status === 'open').length;
         const criticalCount = incidents.filter((incident) => incident.severity === 'critical').length;
         const noSaleCount = incidents.filter((incident) => !incident.matchedSaleId).length;
         const withCustomerCount = incidents.filter((incident) => incident.regionTags.includes('Customer')).length;
+        const latestIncident = incidents[0]?.incidentAt || null;
 
         const cards = [
             { label: 'Open Incidents', value: openCount, color: '#1565C0', bg: '#E3F2FD' },
             { label: 'Critical Incidents', value: criticalCount, color: '#B71C1C', bg: '#FFEBEE' },
             { label: 'No Matching Sale', value: noSaleCount, color: '#EF6C00', bg: '#FFF3E0' },
-            { label: 'Customer-Involved', value: withCustomerCount, color: '#2E7D32', bg: '#E8F5E9' }
+            { label: 'Latest Incident', value: latestIncident ? this.formatShortTime(latestIncident) : '-', color: '#2E7D32', bg: '#E8F5E9' },
+            { label: 'Customer-Involved', value: withCustomerCount, color: '#6A1B9A', bg: '#F3E5F5' }
         ];
 
         return `
@@ -266,49 +420,49 @@ const FraudReview = {
                 ${cards.map((card) => `
                     <div style="background:${card.bg};border-radius:12px;padding:16px;">
                         <div style="font-size:0.85rem;color:#5f6368;">${card.label}</div>
-                        <div style="font-size:1.9rem;font-weight:700;color:${card.color};">${card.value}</div>
+                        <div style="font-size:1.7rem;font-weight:700;color:${card.color};">${card.value}</div>
                     </div>
                 `).join('')}
             </div>
         `;
     },
 
-    renderSchemaCard() {
+    renderModeBanner(result) {
+        if (result.mode === 'live') {
+            return `
+                <div style="background:#E8F5E9;border:1px solid #81C784;color:#1B5E20;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+                    Reading incidents from <code>${this.escapeHtml(result.source)}</code>. Historical filters are applied to the live incident archive.
+                </div>
+            `;
+        }
+
+        if (result.mode === 'legacy') {
+            return `
+                <div style="background:#FFF3E0;border:1px solid #FFB74D;color:#6D4C41;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+                    No live <code>fraudIncidents</code> matched this range. Showing legacy <code>fraudAlerts</code> instead.
+                </div>
+            `;
+        }
+
         return `
-            <div style="background:#F7F9FC;border:1px solid #DCE3F0;border-radius:12px;padding:16px;margin-bottom:20px;">
-                <h3 style="margin:0 0 8px 0;">Target Incident Schema</h3>
-                <p style="margin:0 0 12px 0;color:#5f6368;">
-                    Store future correlated fraud-review documents in <code>fraudIncidents</code>.
-                </p>
-                <div style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;background:#fff;border:1px solid #E5EAF3;border-radius:10px;padding:12px;">{
-  type,
-  title,
-  severity,
-  status,
-  incidentAt,
-  incidentWindowStart,
-  incidentWindowEnd,
-  cashierId,
-  cashierName,
-  matchedSaleId,
-  saleAmount,
-  posRegistered,
-  regionTags,
-  evidenceSummary,
-  cameraName,
-  shinobiMonitorId,
-  clipUrl,
-  clipPath,
-  clipStart,
-  clipEnd,
-  createdAt,
-  updatedAt
-}</div>
+            <div style="background:#F5F7FA;border:1px solid #DCE3F0;color:#44546A;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+                No incidents found for the selected date range. This is a real empty result, not sample data.
+            </div>
+        `;
+    },
+
+    renderEmptyState() {
+        return `
+            <div style="background:#fff;border:1px dashed #DCE3F0;border-radius:12px;padding:28px;text-align:center;color:#5f6368;">
+                <div style="font-size:1.1rem;font-weight:700;color:#334155;margin-bottom:8px;">No fraud incidents found</div>
+                <div>Try widening the date range or rerun the correlation writer to backfill more history.</div>
             </div>
         `;
     },
 
     renderTable(incidents) {
+        if (!incidents.length) return this.renderEmptyState();
+
         return `
             <div class="table-container">
                 <table class="data-table">
@@ -334,9 +488,12 @@ const FraudReview = {
                                         ${this.escapeHtml(incident.cameraName)} | ${this.escapeHtml(incident.clipLabel)}
                                     </div>
                                     ${incident.clipUrl ? `
-                                        <div style="margin-top:8px;">
+                                        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
                                             <a href="${this.escapeHtml(incident.clipUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 10px;border-radius:999px;background:#E8F0FE;color:#1A73E8;font-size:0.8rem;font-weight:700;">
                                                 Preview Video
+                                            </a>
+                                            <a href="http://192.168.51.226:8080" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 10px;border-radius:999px;background:#EEF7EE;color:#2E7D32;font-size:0.8rem;font-weight:700;">
+                                                Open Live Camera
                                             </a>
                                         </div>
                                     ` : ''}
@@ -362,31 +519,81 @@ const FraudReview = {
         `;
     },
 
-    async render() {
+    attachFilterListeners() {
+        const form = document.getElementById('fraudReviewFilters');
+        if (form) {
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                await this.applyFilters();
+            });
+        }
+
+        document.querySelectorAll('[data-fraud-preset]').forEach((button) => {
+            button.addEventListener('click', async (event) => {
+                const preset = event.currentTarget.dataset.fraudPreset;
+                this.applyPresetRange(preset);
+                await this.render();
+            });
+        });
+    },
+
+    async applyFilters() {
+        const fromDate = document.getElementById('fraudFilterFromDate')?.value || '';
+        const toDate = document.getElementById('fraudFilterToDate')?.value || '';
+        const status = document.getElementById('fraudFilterStatus')?.value || '';
+        const severity = document.getElementById('fraudFilterSeverity')?.value || '';
+        const limit = parseInt(document.getElementById('fraudFilterLimit')?.value || '200', 10);
+
+        this.state = {
+            fromDate,
+            toDate,
+            status,
+            severity,
+            limit: Number.isFinite(limit) ? limit : 200
+        };
+
+        await this.render();
+    },
+
+    applyPresetRange(preset) {
+        const today = this.getTodayString();
+        if (preset === 'today') {
+            this.state.fromDate = today;
+            this.state.toDate = today;
+            return;
+        }
+
+        if (preset === 'last24h') {
+            this.state.fromDate = this.shiftDateString(today, -1);
+            this.state.toDate = today;
+            return;
+        }
+
+        if (preset === 'last7d') {
+            this.state.fromDate = this.shiftDateString(today, -6);
+            this.state.toDate = today;
+        }
+    },
+
+    async render(options = {}) {
         const container = document.getElementById('fraudDetectionContent');
         if (!container) return;
 
-        container.innerHTML = '<p class="empty-state">Loading fraud review inbox...</p>';
+        if (!options.silent) {
+            container.innerHTML = '<p class="empty-state">Loading fraud review inbox...</p>';
+        }
 
-        const result = await this.loadIncidents();
-        const modeBanner = result.mode === 'sample'
-            ? `
-                <div style="background:#FFF8E1;border:1px solid #FBC02D;color:#6D4C41;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
-                    No live incident documents found yet. Showing starter sample incidents so the admin inbox has a concrete target for later POS and Shinobi ingestion.
-                </div>
-            `
-            : `
-                <div style="background:#E8F5E9;border:1px solid #81C784;color:#1B5E20;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
-                    Reading incidents from <code>${this.escapeHtml(result.source)}</code>.
-                </div>
-            `;
+        const result = await this.loadData();
 
         container.innerHTML = `
-            ${modeBanner}
+            ${this.renderMonitorStateCard(result.monitorState)}
+            ${this.renderFilterBar()}
+            ${this.renderModeBanner(result)}
             ${this.renderSummaryCards(result.incidents)}
-            ${this.renderSchemaCard()}
             ${this.renderTable(result.incidents)}
         `;
+
+        this.attachFilterListeners();
     }
 };
 
