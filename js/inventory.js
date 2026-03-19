@@ -487,7 +487,19 @@ const Inventory = {
     },
 
     // ===== PRODUCTION ENTRY MODAL (Manual Entry) =====
-    showProductionModal() {
+    async showProductionModal() {
+        const today = this.getTodayString();
+
+        // Opening beginning stock should always target today, even if the user
+        // was previously browsing an older inventory date.
+        if (this.selectedDate !== today) {
+            this.selectedDate = today;
+            await this.load();
+            await this.checkPendingCarryover();
+            this.setupRealtimeListener();
+            this.render();
+        }
+
         // Get products that don't have a record yet today
         const existingProductIds = this.dailyRecords.map(r => r.productId);
         this.availableProducts = Products.data.filter(p => !existingProductIds.includes(p.id));
